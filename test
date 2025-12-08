@@ -10,7 +10,7 @@ local TARGET_SIDE = "right"
 local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
 
 -- Ezra's builder hut location (updated coordinates)
-local ezraHut = { x = 31, y = 63, z = -45, dimension = "minecraft:overworld" }
+local ezraHut = { x = 31, y = 64, z = -45, dimension = "minecraft:overworld" }
 
 -- Netherite tool whitelist
 local netheriteTools = {
