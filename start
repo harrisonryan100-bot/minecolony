@@ -1,8 +1,70 @@
+local colony = peripheral.wrap("top")
 local me = peripheral.wrap("bottom")
 local TARGET_SIDE = "right"
 
+-- Netherite tool whitelist
+local netheriteTools = {
+  ["minecraft:netherite_pickaxe"]=true, ["minecraft:netherite_axe"]=true,
+  ["minecraft:netherite_shovel"]=true, ["minecraft:netherite_hoe"]=true,
+  ["minecraft:netherite_sword"]=true
+}
+local function isNetheriteTool(id) return netheriteTools[id] end
+
+-- Safe colony call
+local function safeGetRequests()
+  local ok,res = pcall(function() return colony.getRequests() end)
+  return ok and res or {}
+end
+
+-- AE2 helpers
+local function getItemCount(id)
+  local items = me.getItems() or {}
+  local total = 0
+  for _,it in ipairs(items) do if it.name==id then total=total+(it.count or 0) end end
+  return total
+end
+
+local function pushItem(id, quota)
+  local available = getItemCount(id)
+  if available >= quota then
+    local ok = me.exportItem({name=id,count=quota},TARGET_SIDE)
+    print("✔ "..quota.."x "..id.." exported (result="..tostring(ok)..")")
+  else
+    print("⚠ "..id.." missing ("..available.."/"..quota..")")
+    -- optional: queue craft here if desired
+  end
+end
+
+-- Main loop: filter builder requests
 while true do
-  local ok = me.exportItem({name="minecraft:torch", count=4}, TARGET_SIDE)
-  print("Export torch result:", ok)
-  sleep(5)
+  local reqs = safeGetRequests()
+  print("Total colony requests: "..#reqs)
+  local handled,removed = 0,0
+  for _,r in ipairs(reqs) do
+    local tgt = r.target or {}
+    local tname = tgt.name or (tgt.type or "unknown")
+    if tname:lower():find("builder") then
+      print("→ Builder request from "..tname.." ("..r.desc..")")
+      for _,it in ipairs(r.items or {}) do
+        local id = it.name
+        if id then
+          -- Tool filter
+          if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
+            if not isNetheriteTool(id) then
+              print("  🗑 skipped non-Netherite: "..id)
+              removed=removed+1
+            else
+              pushItem(id,it.count or 1)
+              handled=handled+1
+            end
+          else
+            pushItem(id,it.count or 1)
+            handled=handled+1
+          end
+        end
+      end
+    end
+  end
+  print("Loop complete: handled "..handled.." items, removed "..removed.." non-Netherite")
+  sleep(10)
 end
