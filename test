@@ -1,21 +1,11 @@
--- Replace "top" and "back" with the sides your chests are actually on
-local sourceSide = "top"
-local destSide   = "back"
+local side = "back" -- the side your chest is on
+if not peripheral.isPresent(side) then
+    error("No peripheral found on " .. side)
+end
 
-if not peripheral.isPresent(sourceSide) then error("No chest found on " .. sourceSide) end
-if not peripheral.isPresent(destSide) then error("No chest found on " .. destSide) end
-
-local source = peripheral.wrap(sourceSide)
-local dest   = peripheral.wrap(destSide)
-
-print("Source chest size:", source.size())
-print("Destination chest size:", dest.size())
-
--- Try moving just the first item
-local firstItem = source.getItemDetail(1)
-if firstItem then
-    local moved = source.pushItem(destSide, 1, firstItem.count)
-    print("Moved " .. moved .. " x " .. firstItem.name .. " to destination chest")
-else
-    print("No item in slot 1 to move")
+local p = peripheral.wrap(side)
+print("Peripheral type:", peripheral.getType(side))
+print("Peripheral methods:")
+for k,v in pairs(p) do
+    print("-", k, type(v))
 end
