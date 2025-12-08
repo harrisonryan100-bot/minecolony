@@ -42,14 +42,14 @@ local function returnUnrequestedItems(requestedItems)
     end
 end
 
-while true do
+-- Main loop in a function to avoid 'goto' issues
+local function processRequests()
     local ok, allRequests = pcall(function()
         return integrator.getRequests()
     end)
     if not ok or not allRequests then
         print("Failed to get requests from integrator")
-        sleep(SLEEP_TIME)
-        goto continue
+        return
     end
 
     -- Build a table of requested items for Ezra
@@ -64,8 +64,7 @@ while true do
 
     if next(ezraRequests) == nil then
         print("No requests for " .. BUILDER_NAME .. "; waiting " .. SLEEP_TIME .. "s")
-        sleep(SLEEP_TIME)
-        goto continue
+        return
     end
 
     -- Fulfill each request
@@ -83,7 +82,10 @@ while true do
 
     -- Return any unrelated items in chest
     returnUnrequestedItems(ezraRequests)
+end
 
-    ::continue::
+-- Loop forever
+while true do
+    processRequests()
     sleep(SLEEP_TIME)
 end
