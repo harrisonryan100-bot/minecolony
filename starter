@@ -4,6 +4,7 @@
 -- Processes Builder Hut requests (PENDING or IN_PROGRESS)
 -- Parses quantity prefixes in request.name into AE2 item IDs
 -- Logs activity to automation_log.txt
+-- Does not call requestCraft; waits until items appear in AE2
 -- ===========================================
 
 -- Wrap peripherals
@@ -61,10 +62,10 @@ function getItemCount(meBridge, itemName)
     return total
 end
 
--- Pull or request craft from AE2 with retries
-function pullOrCraft(meBridge, itemName, count)
+-- Pull from AE2 with retries (waits until items appear)
+function pullFromAE2(meBridge, itemName, count)
     local attempts = 0
-    while attempts < 5 do
+    while attempts < 10 do
         local available = getItemCount(meBridge, itemName)
         if available >= count then
             local ok = meBridge.pullItem(itemName, count)
@@ -72,13 +73,12 @@ function pullOrCraft(meBridge, itemName, count)
             return ok
         else
             local missing = count - available
-            log("Not enough " .. itemName .. " in AE2, requesting craft of " .. missing)
-            meBridge.requestCraft(itemName, missing)
-            sleep(2) -- wait for AE2 to start crafting
+            log("Not enough " .. itemName .. " in AE2 (" .. missing .. " missing), waiting...")
+            sleep(5) -- wait before retrying
             attempts = attempts + 1
         end
     end
-    log("Failed to pull/craft " .. count .. "x " .. itemName .. " after retries")
+    log("Failed to pull " .. count .. "x " .. itemName .. " after retries")
     return false
 end
 
@@ -100,7 +100,7 @@ function fulfillRequest(meBridge, request)
     -- Determine required count
     local totalCount = (request.items and request.items.count) or request.count or 1
 
-    local ok = pullOrCraft(meBridge, itemName, totalCount)
+    local ok = pullFromAE2(meBridge, itemName, totalCount)
     if ok then
         log("Successfully fulfilled request: " .. totalCount .. "x " .. itemName)
     else
