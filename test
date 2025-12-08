@@ -6,6 +6,7 @@ if not colony_integrator or not me_bridge or not chest then
     error("Missing required peripherals")
 end
 
+-- Helper function to safely export an item to a chest
 local function exportItemToChest(itemName, count)
     local exported = 0
     local ok, result = pcall(function()
@@ -18,6 +19,7 @@ local function exportItemToChest(itemName, count)
     return exported
 end
 
+-- Helper function to safely craft items
 local function craftItem(itemName, count)
     local ok, result = pcall(function()
         return me_bridge.craftItem({name=itemName, count=count})
@@ -26,16 +28,14 @@ local function craftItem(itemName, count)
         print("Error crafting", itemName, "-", result)
         return false
     end
-    if result then
-        print("Requested craft:", count, "x", itemName)
-        return true
-    end
-    return false
+    print("Requested craft:", count, "x", itemName)
+    return true
 end
 
 while true do
     local allRequests = colony_integrator.getRequests() or {}
 
+    -- Filter requests for Builder's Hut
     local builderRequests = {}
     for _, req in ipairs(allRequests) do
         if req.target == "Builder's Hut" then
@@ -44,23 +44,20 @@ while true do
         end
     end
 
-    for itemName, totalCount in pairs(builderRequests) do
-        local remaining = totalCount
+    -- Process each requested item
+    for itemName, count in pairs(builderRequests) do
+        local exported = exportItemToChest(itemName, count)
 
-        while remaining > 0 do
-            local exported = exportItemToChest(itemName, remaining)
-            remaining = remaining - exported
-            print("Exported", exported, "of", itemName, "remaining", remaining)
-
-            if remaining > 0 then
-                local success = craftItem(itemName, remaining)
-                if not success then
-                    print("Cannot craft more of", itemName, "waiting for resources...")
-                    break
-                else
-                    -- Wait a bit to let AE2 process the craft before trying again
-                    sleep(2)
-                end
+        -- If not fully exported, try crafting the missing amount
+        if exported < count then
+            local missing = count - exported
+            print("Not enough in AE2:", itemName, "need", missing, "more. Attempting to craft.")
+            local success = craftItem(itemName, missing)
+            if success then
+                -- Optionally, try to export again after crafting
+                sleep(2)  -- short wait for AE2 to register the craft
+                local secondExport = exportItemToChest(itemName, missing)
+                print("After crafting, exported additional", secondExport, "of", itemName)
             end
         end
     end
