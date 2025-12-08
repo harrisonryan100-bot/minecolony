@@ -1,5 +1,5 @@
 ------------------------------------------------------------
--- AE2ColonyWarehouse (Simplified, CC:Tweaked / Advanced Peripherals Compliant)
+-- AE2ColonyWarehouse with Export Logging
 ------------------------------------------------------------
 
 local SCAN_INTERVAL = 10  -- seconds between scans
@@ -25,35 +25,45 @@ end
 ------------------------------------------------------------
 local function exportToChest(itemName, count)
     local stack = { name = itemName, count = count }
+    dprint("Attempting to export " .. count .. "x " .. itemName .. " to side: " .. chestSide)
     local ok, exported = pcall(function() return meBridge.exportItem(stack, chestSide) end)
-    if not ok or exported == 0 then
-        dprint("Failed to export " .. itemName)
+    if not ok then
+        dprint("ERROR exporting " .. itemName .. ": " .. tostring(exported))
         return 0
     end
-    dprint("Exported " .. exported .. "x " .. itemName)
+    if exported == 0 then
+        dprint("Nothing exported for " .. itemName .. ". Check if AE2 has stock or chest is accessible.")
+    else
+        dprint("Successfully exported " .. exported .. "x " .. itemName)
+    end
     return exported
 end
 
 local function craftItem(itemName, count)
+    dprint("Attempting to craft " .. count .. "x " .. itemName)
     local ok, result = pcall(function() return meBridge.craftItem({ name = itemName, count = count }) end)
-    if ok then
-        dprint("Scheduled craft of " .. count .. "x " .. itemName)
-        return true
-    else
-        dprint("Failed to craft " .. itemName .. ": " .. tostring(result))
+    if not ok then
+        dprint("ERROR crafting " .. itemName .. ": " .. tostring(result))
         return false
     end
+    dprint("Scheduled craft of " .. count .. "x " .. itemName)
+    return true
 end
 
 ------------------------------------------------------------
 -- Colony Integrator Helpers
 ------------------------------------------------------------
 local function getRequests()
-    return colony.getRequests() or {}
+    local ok, requests = pcall(function() return colony.getRequests() end)
+    if not ok then
+        dprint("ERROR fetching requests: " .. tostring(requests))
+        return {}
+    end
+    return requests or {}
 end
 
 ------------------------------------------------------------
--- Fulfill All Requests
+-- Fulfill All Requests with Logging
 ------------------------------------------------------------
 local function fulfillAllRequests()
     local allRequests = getRequests()
@@ -62,10 +72,11 @@ local function fulfillAllRequests()
         return
     end
 
-    -- Fulfill each request individually
     for _, req in ipairs(allRequests) do
         local itemName = req.items[1].name
         local needed = req.count
+
+        dprint(string.format("Processing request for %d x %s (Target: %s)", needed, itemName, req.target))
 
         -- Attempt to export requested quantity
         local exported = exportToChest(itemName, needed)
@@ -73,6 +84,7 @@ local function fulfillAllRequests()
         -- If not fully exported, schedule craft for missing amount
         if exported < needed then
             local missing = needed - exported
+            dprint(string.format("%d x %s missing from AE2, scheduling craft", missing, itemName))
             craftItem(itemName, missing)
         end
     end
@@ -82,6 +94,8 @@ end
 -- Main Loop
 ------------------------------------------------------------
 while true do
+    dprint("Starting request scan...")
     fulfillAllRequests()
+    dprint("Scan complete. Sleeping for " .. SCAN_INTERVAL .. " seconds.\n")
     sleep(SCAN_INTERVAL)
 end
