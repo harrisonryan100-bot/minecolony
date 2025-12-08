@@ -1,86 +1,60 @@
---------------------
--- CONFIG
---------------------
-local SCAN_INTERVAL = 10 -- seconds between scans when nothing is pending
-local EXPORT_SIDE = "left" -- side where the chest is connected
-local RANGE = 5 -- blocks from computer to Builders Huts
+-- User Settings
+local SCAN_INTERVAL = 10  -- seconds between scans when idle
+local EXPORT_CHEST_SIDE = "front"  -- side of the chest relative to the computer
+local MAX_DISTANCE = 5  -- only Builders Huts within 5 blocks
 
--- Top = colony integrator, Bottom = ME Bridge
-local colony_integrator = peripheral.wrap("top")
-local me_bridge = peripheral.wrap("bottom")
-local chest = peripheral.wrap(EXPORT_SIDE)
+-- Peripherals
+local colony_integrator = peripheral.find("colonyIntegrator") or error("No colony_integrator (top) found")
+local me_bridge = peripheral.find("meBridge") or error("No me_bridge (bottom) found")
+local chest = peripheral.wrap(EXPORT_CHEST_SIDE) or error("No chest detected on side " .. EXPORT_CHEST_SIDE)
 
-if not colony_integrator then error("Colony Integrator not found on top") end
-if not me_bridge then error("ME Bridge not found on bottom") end
-if not chest then error("No chest/barrel found on " .. EXPORT_SIDE) end
-
---------------------
--- HELPERS
---------------------
-local function normalizeName(name)
-    local clean = name:match("([^:]+:[^:]+)")
-    if clean then return clean else return name end
+-- Helper function to calculate distance (manhattan)
+local function distance(pos1, pos2)
+    return math.abs(pos1.x - pos2.x) + math.abs(pos1.y - pos2.y) + math.abs(pos1.z - pos2.z)
 end
 
-local function getNearbyBuilders()
-    local huts = colony_integrator.getBuildings("buildersHut") or {}
-    local nearby = {}
-    local cx, cy, cz = table.unpack({gps.locate()}) -- get computer position
-    for _, hut in ipairs(huts) do
-        local hx, hy, hz = hut:getPosition()
-        local dx, dy, dz = math.abs(cx - hx), math.abs(cy - hy), math.abs(cz - hz)
-        if dx <= RANGE and dy <= RANGE and dz <= RANGE then
-            table.insert(nearby, hut)
-        end
+-- Export a requested item from ME Bridge into chest
+local function exportItem(itemName, count)
+    local ok, exported = pcall(function()
+        return chest.pullItems(me_bridge, itemName, count)
+    end)
+    if not ok then
+        print("Error exporting " .. itemName .. ": " .. tostring(exported))
+        return 0
     end
-    return nearby
+    return exported or 0
 end
 
-local function getRequestsForHut(hut)
-    local requests = colony_integrator.getRequests(hut) or {}
-    return requests
-end
-
-local function getAEItems()
-    local items = me_bridge.listItems() or {}
-    local aeItems = {}
-    for _, i in ipairs(items) do
-        local n = normalizeName(i.name)
-        aeItems[n] = (aeItems[n] or 0) + (i.count or 0)
-    end
-    return aeItems
-end
-
-local function exportItemToChest(itemName, count)
-    local pushed = chest.pullItems(me_bridge, itemName, count) -- pull from ME Bridge to chest
-    return pushed or 0
-end
-
---------------------
--- MAIN LOOP
---------------------
+-- Main loop
 while true do
-    local aeItems = getAEItems()
-    local builders = getNearbyBuilders()
-    local pending = false
-
-    for _, hut in ipairs(builders) do
-        local requests = getRequestsForHut(hut)
-        for _, req in ipairs(requests) do
-            local item = normalizeName(req.items[1].name)
-            local needed = req.count
-            local available = aeItems[item] or 0
-            if available > 0 then
-                local toExport = math.min(available, needed)
-                local exported = exportItemToChest(item, toExport)
-                print(string.format("Exported %d of %s to chest for %s", exported, item, hut:getOwnerName()))
-                aeItems[item] = available - exported
-                pending = true
+    local requests = {}
+    local ok, allRequests = pcall(colony_integrator.getRequests)
+    if ok and allRequests then
+        -- Filter for Builders Huts within 5 blocks
+        local compPos = {x=0, y=0, z=0}  -- default computer position (adjust if needed)
+        for _, req in ipairs(allRequests) do
+            local targetPos = req.targetPosition or {x=0, y=0, z=0}
+            local dist = distance(compPos, targetPos)
+            if dist <= MAX_DISTANCE and string.find(req.target, "Builder") then
+                table.insert(requests, req)
             end
         end
+    else
+        print("Failed to get requests from colony_integrator")
     end
 
-    if not pending then
+    -- Fulfill requests
+    for _, req in ipairs(requests) do
+        local itemName = req.items[1].name
+        local needed = req.count
+        local exported = exportItem(itemName, needed)
+        print(string.format("Exported %d/%d of %s to chest", exported, needed, itemName))
+    end
+
+    -- Pause before next scan
+    if #requests == 0 then
         sleep(SCAN_INTERVAL)
+    else
+        sleep(1) -- short pause between handling requests
     end
 end
