@@ -9,11 +9,8 @@ local TARGET_SIDE = "right"
 
 local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
 
--- ====== CONFIG: add builder hut locations here ======
-local BUILDERS = {
-  -- { x = 0, y = 0, z = 0, dimension = "minecraft:overworld" },
-}
--- ================================================
+-- Ezra's builder hut location (replace with actual values from your colony)
+local ezraHut = { x = 123, y = 64, z = -456, dimension = "minecraft:overworld" }
 
 -- Netherite tool whitelist
 local netheriteTools = {
@@ -110,11 +107,6 @@ local function pushItem(id, quota)
 end
 
 -- Safe colony calls
-local function safeGetRequests()
-  local ok, res = pcall(function() return colony.getRequests() end)
-  return ok and res or {}
-end
-
 local function safeGetBuilderResources(loc)
   local ok, res = pcall(function() return colony.getBuilderResources(loc) end)
   return ok and res or {}
@@ -125,68 +117,39 @@ local function safeIsPendingConstruction(loc)
   return ok and res or false
 end
 
--- Main loop
+-- Main loop: Ezra’s hut only
 while true do
   local ok, err = xpcall(function()
     craftsThisLoop = 0
     local handled = 0
     local seen = {}
 
-    -- Colony-wide requests
-    for _, req in ipairs(safeGetRequests()) do
-      for _, item in ipairs(req.items or {}) do
-        local id = item.name
+    if safeIsPendingConstruction(ezraHut) then
+      log("Ezra's builder hut has a pending construction job")
+      for _, it in ipairs(safeGetBuilderResources(ezraHut)) do
+        local id = it.item and it.item.name
         if id and not seen[id] then
           -- Filter: remove non-Netherite tools
           if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
             if not isNetheriteTool(id) then
-              log("🗑 Removed non-Netherite tool request: " .. id)
+              log("🗑 Removed non-Netherite tool request from Ezra's hut: " .. id)
               goto continue
             end
           end
-          local quota = (item.maxCount and item.maxCount == 1) and 4 or 64
+          local quota = it.needed or 1
           pushItem(id, quota)
           seen[id] = true
           handled = handled + 1
         end
         ::continue::
       end
-    end
-
-    -- Builder hut-specific requests via manual locations
-    for _, loc in ipairs(BUILDERS) do
-      if safeIsPendingConstruction(loc) then
-        log("Builder at (" .. (loc.x or "?") .. "," .. (loc.y or "?") .. "," .. (loc.z or "?") .. ") has a pending construction job")
-        for _, it in ipairs(safeGetBuilderResources(loc)) do
-          local id = it.item and it.item.name
-          if id and not seen[id] then
-            -- Filter: remove non-Netherite tools
-            if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
-              if not isNetheriteTool(id) then
-                log("🗑 Removed non-Netherite tool request from builder: " .. id)
-                goto continue
-              end
-            end
-            local quota = it.needed or 1
-            pushItem(id, quota)
-            seen[id] = true
-            handled = handled + 1
-          end
-          ::continue::
-        end
-      else
-        log("Builder at (" .. (loc.x or "?") .. "," .. (loc.y or "?") .. "," .. (loc.z or "?") .. ") is idle, skipping")
-      end
+    else
+      log("Ezra's hut is idle, skipping")
     end
 
     log("Loop complete, handled " .. handled .. " unique items")
-  end, function(e)
-    return debug and debug.traceback and debug.traceback(e) or tostring(e)
-  end)
+  end, function(e) return tostring(e) end)
 
-  if not ok then
-    log("🔥 Top-level loop error recovered:\n" .. tostring(err))
-  end
-
+  if not ok then log("🔥 Loop error recovered:\n" .. tostring(err)) end
   sleep(5)
 end
