@@ -1,52 +1,89 @@
 -- Wrap peripherals
-local colony_integrator = peripheral.wrap("top")  -- integrator on top
-local me_bridge        = peripheral.wrap("bottom") -- ME Bridge on bottom
-local chest            = peripheral.wrap("back")   -- chest on back
+local integrator = peripheral.wrap("top")   -- Colony Integrator
+local me_bridge  = peripheral.wrap("bottom") -- AE2 Bridge
+local chest      = peripheral.wrap("back")  -- Output chest
 
-if not colony_integrator then error("No Colony Integrator found on top!") end
-if not me_bridge then error("No ME Bridge found on bottom!") end
-if not chest then error("No chest found on back!") end
+if not integrator then error("No Colony Integrator found on top!") end
+if not me_bridge  then error("No ME Bridge found on bottom!") end
+if not chest      then error("No chest found on back!") end
 
--- Export item helper
+local BUILDER_NAME = "Ezra"  -- Only fulfill requests for this builder
+local SLEEP_TIME   = 10      -- seconds between cycles
+
+-- Export a specific quantity of an item to chest
 local function exportItem(itemName, count)
-    local exported = me_bridge.exportItem({name=itemName, count=count}, "back")
-    print("Exported", exported, "of", itemName)
-    return exported
+    local ok, exported = pcall(function()
+        return me_bridge.exportItem({name=itemName, count=count}, "back")
+    end)
+    if not ok then
+        print("Error exporting " .. itemName .. ": " .. tostring(exported))
+        return 0
+    end
+    return exported or 0
 end
 
--- Return unrequested items
+-- Return items in chest that are not requested by Ezra
 local function returnUnrequestedItems(requestedItems)
-    local chestItems = chest.list() or {}
-    for slot, item in pairs(chestItems) do
-        if not requestedItems[item.name] then
-            local returned = me_bridge.exportItem({name=item.name, count=item.count}, "back")
-            print("Returned", returned, "of", item.name)
+    local ok, chestList = pcall(function()
+        return chest.list()
+    end)
+    if not ok or not chestList then return end
+
+    for slot, item in pairs(chestList) do
+        local name = item.name
+        if not requestedItems[name] then
+            local ok2, returned = pcall(function()
+                return me_bridge.exportItem({name=name, count=item.count}, "bottom")
+            end)
+            if ok2 then
+                print("Returned " .. returned .. "x " .. name .. " to AE2")
+            end
         end
     end
 end
 
 while true do
-    local requests = colony_integrator.getRequests() or {}
+    local ok, allRequests = pcall(function()
+        return integrator.getRequests()
+    end)
+    if not ok or not allRequests then
+        print("Failed to get requests from integrator")
+        sleep(SLEEP_TIME)
+        goto continue
+    end
 
-    -- Only handle Builder's Hut requests
-    local builderRequests = {}
-    for _, req in ipairs(requests) do
-        if req.target == "Builder's Hut" then
-            local itemName = req.items[1].name
-            builderRequests[itemName] = (builderRequests[itemName] or 0) + req.count
+    -- Build a table of requested items for Ezra
+    local ezraRequests = {}
+    for _, req in ipairs(allRequests) do
+        if req.target == BUILDER_NAME then
+            for _, item in ipairs(req.items) do
+                ezraRequests[item.name] = (ezraRequests[item.name] or 0) + req.count
+            end
         end
     end
 
-    -- Fulfill requests
-    for itemName, count in pairs(builderRequests) do
-        print("Requesting craft of", count, itemName)
-        me_bridge.craftItem({name=itemName, count=count})
-        sleep(1) -- short pause to let AE2 process
-        exportItem(itemName, count)
+    if next(ezraRequests) == nil then
+        print("No requests for " .. BUILDER_NAME .. "; waiting " .. SLEEP_TIME .. "s")
+        sleep(SLEEP_TIME)
+        goto continue
     end
 
-    -- Return unrequested items
-    returnUnrequestedItems(builderRequests)
+    -- Fulfill each request
+    for itemName, count in pairs(ezraRequests) do
+        local exported = exportItem(itemName, count)
+        if exported > 0 then
+            pcall(function()
+                integrator.fulfillRequest(BUILDER_NAME, itemName, exported)
+            end)
+            print("Fulfilled " .. exported .. "x " .. itemName .. " for " .. BUILDER_NAME)
+        else
+            print("Could not export " .. itemName)
+        end
+    end
 
-    sleep(10)
+    -- Return any unrelated items in chest
+    returnUnrequestedItems(ezraRequests)
+
+    ::continue::
+    sleep(SLEEP_TIME)
 end
