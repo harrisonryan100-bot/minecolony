@@ -9,9 +9,6 @@ local TARGET_SIDE = "right"
 
 local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
 
--- Ezra's builder hut location (hard-coded)
-local ezraHut = { x = 31, y = 64, z = -45, dimension = "minecraft:overworld" }
-
 -- Netherite tool whitelist
 local netheriteTools = {
   ["minecraft:netherite_pickaxe"] = true,
@@ -112,7 +109,7 @@ local function safeGetRequests()
   return ok and res or {}
 end
 
--- Main loop: filter requests for Ezra’s hut
+-- Main loop: process all requests, log targets
 while true do
   local ok, err = xpcall(function()
     craftsThisLoop = 0
@@ -122,29 +119,29 @@ while true do
 
     for _, req in ipairs(safeGetRequests()) do
       local tgt = req.target or {}
-      if tgt.location 
-         and tgt.location.x == ezraHut.x 
-         and tgt.location.y == ezraHut.y 
-         and tgt.location.z == ezraHut.z then
+      local tloc = tgt.location or {}
+      local tname = tgt.name or (tgt.type or "unknown")
 
-        for _, item in ipairs(req.items or {}) do
-          local id = item.name
-          if id and not seen[id] then
-            -- Filter: remove non-Netherite tools
-            if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
-              if not isNetheriteTool(id) then
-                log("🗑 Removed non-Netherite tool request from Ezra's hut: " .. id)
-                removed = removed + 1
-                goto continue
-              end
+      -- Trace which building the request belongs to
+      log(string.format("→ Request target: %s @ (%s,%s,%s)", tostring(tname), tostring(tloc.x), tostring(tloc.y), tostring(tloc.z)))
+
+      for _, item in ipairs(req.items or {}) do
+        local id = item.name
+        if id and not seen[id] then
+          -- Filter: remove non-Netherite tools
+          if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
+            if not isNetheriteTool(id) then
+              log("🗑 Removed non-Netherite tool request: " .. id .. " (target: " .. tostring(tname) .. ")")
+              removed = removed + 1
+              goto continue
             end
-            local quota = item.count or 1
-            pushItem(id, quota)
-            seen[id] = true
-            handled = handled + 1
           end
-          ::continue::
+          local quota = item.count or 1
+          pushItem(id, quota)
+          seen[id] = true
+          handled = handled + 1
         end
+        ::continue::
       end
     end
 
