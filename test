@@ -1,12 +1,66 @@
-local me = peripheral.find("meBridge") or error("No ME bridge found!")
+-- Wrap peripherals
+local integrator = peripheral.wrap("top")      -- colony integrator
+local me        = peripheral.wrap("bottom")    -- me bridge
+local chest     = peripheral.wrap("back")      -- output chest
 
-print("Does listItems work?")
-local items = me.listItems()
-print(items)
+if not integrator then error("No Colony Integrator on top") end
+if not me then error("No ME Bridge on bottom") end
+if not chest then error("No chest on back") end
 
-print("Craftable list:")
-print(me.isItemCraftable({name="minecraft:stone_bricks"}))
+-- Export item from AE2 into chest
+local function exportFromAE2(item, amount)
+    local exported = me.exportItem({name=item, count=amount}, "back")
+    print("Exported", exported, "/", amount, item)
+    return exported
+end
 
-print("Export test:")
-local r = me.exportItem({name="minecraft:stone_bricks", count=1}, "back")
-print("Export returned:", r)
+-- Return all chest items to AE2
+local function returnChestItems()
+    for slot, item in pairs(chest.list()) do
+        if item and item.name then
+            local returned = me.importItem({name=item.name, count=item.count}, "back")
+            print("Returned", returned, "of", item.name, "to AE2")
+        end
+    end
+end
+
+-- Autocraft missing items
+local function autocraft(item, amountMissing)
+    print("Requesting craft:", item, "x", amountMissing)
+    local ok, err = pcall(function()
+        me.craftItem({ name = item, count = amountMissing })
+    end)
+    if not ok then
+        print("Craft failed:", err)
+    end
+end
+
+while true do
+    local requests = integrator.getRequests() or {}
+    local totals = {}
+
+    -- Tally how many of each item are needed total
+    for _, req in ipairs(requests) do
+        local item = req.items[1].name
+        totals[item] = (totals[item] or 0) + req.count
+    end
+
+    -- Fulfill all requests
+    for item, needed in pairs(totals) do
+        local ae = me.getItem({name=item})
+        local have = ae and ae.count or 0
+
+        print("Need:", needed, "Have:", have, item)
+
+        if have < needed then
+            autocraft(item, needed - have)
+        end
+
+        exportFromAE2(item, needed)
+    end
+
+    -- Return unused items after fulfilling
+    returnChestItems()
+
+    sleep(10)
+end
