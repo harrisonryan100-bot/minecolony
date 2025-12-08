@@ -1,27 +1,47 @@
+-- Peripheral bindings
+local top = peripheral.wrap("top")        -- colony integrator
+local bottom = peripheral.wrap("bottom")  -- me bridge
+local chest = peripheral.find("inventory") -- chest/barrel anywhere
+
+if not top then error("No colony integrator on top") end
+if not bottom then error("No ME bridge on bottom") end
+if not chest then error("No output inventory found") end
+
+print("System online. Monitoring Ezra's Builder Hut...")
+
+-- Export item using the method that worked earlier
+local function export(item, count)
+    local ok = bottom.exportItemToChest({name=item, count=count})
+    print("Export:", item, "x"..count, "->", ok and "OK" or "FAIL")
+    return ok
+end
+
 while true do
-    print("Scanning requests...")
+    local reqs = top.getRequests()
+    local ezra = {}
 
-    local all = colony_integrator.getRequests()
-    local ezraRequests = {}
-
-    for _, req in ipairs(all) do
-        if isEzraRequest(req) then
-            table.insert(ezraRequests, req)
+    -- filter for Ezra's builder hut
+    for _, r in ipairs(reqs) do
+        if r.target and r.target:find("Ezra") then
+            table.insert(ezra, r)
         end
     end
 
-    if #ezraRequests == 0 then
+    if #ezra == 0 then
         print("No Ezra requests. Waiting 10s...")
         sleep(10)
     else
-        print("Found "..#ezraRequests.." Ezra requests.")
+        print("Found", #ezra, "Ezra requests. Processing...")
 
-        for _, req in ipairs(ezraRequests) do
-            local item = req.item
-            local needed = req.count or req.min or 1
-
-            print("Attempting to fulfill: "..item.." x"..needed)
-            exportFromME(item, needed, chestSide)   -- the export method you confirmed works
+        for _, r in ipairs(ezra) do
+            if r.items and #r.items > 0 then
+                local item = r.items[1].name
+                local count = r.items[1].count
+                export(item, count)
+            end
         end
+
+        -- short delay between cycles
+        sleep(1)
     end
 end
