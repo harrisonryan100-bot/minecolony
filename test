@@ -5,22 +5,27 @@ if not colony then error("No Colony Integrator detected on TOP") end
 local me = peripheral.wrap("bottom")
 if not me then error("No ME Bridge detected on BOTTOM") end
 
-local TARGET_SIDE = "right"   -- adjust as needed: "top", "bottom", "left", etc.
+local TARGET_SIDE = "right"
 
 local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
 
 -- ====== CONFIG: add builder hut locations here ======
--- Replace each entry with your actual builder hut location object.
--- Example formats (adjust to match your API):
--- { x = 123, y = 64, z = -456, dimension = "minecraft:overworld" }
--- or MineColonies location object as returned in logs (verbatim).
 local BUILDERS = {
   -- { x = 0, y = 0, z = 0, dimension = "minecraft:overworld" },
-  -- { x = 10, y = 65, z = -20, dimension = "minecraft:overworld" },
 }
 -- ================================================
 
--- Safe ME call wrapper: accepts up to two arguments
+-- Netherite tool whitelist
+local netheriteTools = {
+  ["minecraft:netherite_pickaxe"] = true,
+  ["minecraft:netherite_axe"] = true,
+  ["minecraft:netherite_shovel"] = true,
+  ["minecraft:netherite_hoe"] = true,
+  ["minecraft:netherite_sword"] = true
+}
+local function isNetheriteTool(id) return netheriteTools[id] == true end
+
+-- Safe ME call wrapper
 local function meSafe(name, arg1, arg2)
   local ok, res = pcall(function() return me[name](arg1, arg2) end)
   if not ok then
@@ -35,9 +40,7 @@ local function getItemCount(id)
   local items = meSafe("getItems") or {}
   local total = 0
   for _, it in pairs(items) do
-    if it and it.name == id then
-      total = total + (it.count or 0)
-    end
+    if it and it.name == id then total = total + (it.count or 0) end
   end
   return total
 end
@@ -60,7 +63,7 @@ local function requestCraft(id, count)
     return false
   end
   if not isCraftable(id) then
-    log("⚠ Uncraftable: " .. id .. " (pattern missing)")
+    log("⚠ Uncraftable: " .. id)
     return false
   end
   local now = os.clock()
@@ -89,8 +92,16 @@ local function exportItem(id, count)
   end
 end
 
--- Push logic
+-- Push logic with Netherite filter
 local function pushItem(id, quota)
+  -- Skip non-Netherite tools
+  if id:find("_") and id:find("netherite") == nil and id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
+    if not isNetheriteTool(id) then
+      log("⚠ Skipping non-Netherite tool request: " .. id)
+      return
+    end
+  end
+
   local available = getItemCount(id)
   if available >= quota then
     exportItem(id, quota)
@@ -106,35 +117,23 @@ local function pushItem(id, quota)
   end
 end
 
--- Safe colony calls (no getBuildings used)
+-- Safe colony calls
 local function safeGetRequests()
   local ok, res = pcall(function() return colony.getRequests() end)
-  if not ok then
-    log("⚠ colony.getRequests error: " .. tostring(res))
-    return {}
-  end
-  return res or {}
+  return ok and res or {}
 end
 
 local function safeGetBuilderResources(loc)
   local ok, res = pcall(function() return colony.getBuilderResources(loc) end)
-  if not ok then
-    log("⚠ colony.getBuilderResources error: " .. tostring(res))
-    return {}
-  end
-  return res or {}
+  return ok and res or {}
 end
 
 local function safeIsPendingConstruction(loc)
   local ok, res = pcall(function() return colony.isPendingConstruction(loc) end)
-  if not ok then
-    log("⚠ colony.isPendingConstruction error: " .. tostring(res))
-    return false
-  end
-  return res == true
+  return ok and res or false
 end
 
--- Main loop (no getBuildings)
+-- Main loop
 while true do
   local ok, err = xpcall(function()
     craftsThisLoop = 0
