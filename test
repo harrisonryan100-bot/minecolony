@@ -1,51 +1,63 @@
 -- Wrap peripherals
-local integrator = peripheral.wrap("top")   -- Colony Integrator on top
-local me_bridge  = peripheral.wrap("bottom") -- AE2 Bridge on bottom
-local chest      = peripheral.wrap("back")  -- Chest on back
+local colony_integrator = peripheral.wrap("top")  -- Integrator on top
+local me_bridge        = peripheral.wrap("bottom") -- ME Bridge on bottom
+local chest            = peripheral.wrap("back")   -- Chest on back
 
--- Check peripherals
-if not integrator then error("No Colony Integrator found on top!") end
+if not colony_integrator then error("No Colony Integrator found on top!") end
 if not me_bridge then error("No ME Bridge found on bottom!") end
 if not chest then error("No chest found on back!") end
 
--- Mapping builder huts to names (official API only sees 'target' type)
--- You can manually assign Ezra's hut ID or name here
-local builderHutMapping = {
-    ["Ezra"] = "Builder's Hut"
-}
-
--- Export function (AE2 Bridge)
+-- Helper: Export items from ME Bridge to chest
 local function exportItem(itemName, count)
     local exported = me_bridge.exportItem({name=itemName, count=count}, "back")
     if exported > 0 then
-        print("Exported " .. exported .. "x " .. itemName)
+        print("Exported " .. exported .. "x " .. itemName .. " to chest.")
     else
         print("Failed to export " .. itemName)
     end
     return exported
 end
 
--- Main loop
-while true do
-    -- Get all requests from integrator
-    local requests = integrator.getRequests() or {}
-
-    -- Filter only Ezra's hut requests
-    local ezraRequests = {}
-    for _, req in ipairs(requests) do
-        -- Only include Builder's Hut requests
-        if req.target == builderHutMapping["Ezra"] then
-            for _, item in ipairs(req.items) do
-                ezraRequests[item.name] = (ezraRequests[item.name] or 0) + req.count
+-- Helper: Return items from chest to AE2 if not requested
+local function returnUnrequested(requestedItems)
+    local stored = chest.list() or {}
+    for slot, item in pairs(stored) do
+        local name = item.name
+        if not requestedItems[name] then
+            local returned = me_bridge.exportItem({name=name, count=item.count}, "bottom")
+            if returned > 0 then
+                print("Returned " .. returned .. "x " .. name .. " to AE2 storage.")
             end
         end
     end
+end
 
-    -- Fulfill Ezra's requests
-    for itemName, count in pairs(ezraRequests) do
-        exportItem(itemName, count)
+-- Main loop
+while true do
+    -- Get all requests
+    local requests = colony_integrator.getRequests() or {}
+
+    -- Build a table of requested items (exact counts)
+    local requestedItems = {}
+    for _, req in ipairs(requests) do
+        for _, item in ipairs(req.items) do
+            requestedItems[item.name] = (requestedItems[item.name] or 0) + req.count
+        end
     end
 
-    -- Wait before next cycle
+    -- Fulfill requested items (with autocrafting)
+    for itemName, count in pairs(requestedItems) do
+        -- Request exact amount to be crafted from AE2
+        local exported = exportItem(itemName, count)
+        if exported < count then
+            print("Requesting autocraft for remaining " .. (count - exported) .. "x " .. itemName)
+            me_bridge.requestCraft({name=itemName, count=(count - exported)})
+        end
+    end
+
+    -- Return unrequested items
+    returnUnrequested(requestedItems)
+
+    -- Wait 10 seconds before next cycle
     sleep(10)
 end
