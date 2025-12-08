@@ -1,44 +1,59 @@
--- Reference positions
-local computerPos = { x = os.getComputerPos().x, y = os.getComputerPos().y, z = os.getComputerPos().z }
-
--- Peripherals
+-- Setup peripherals
 local colony_integrator = peripheral.wrap("top")
-if not colony_integrator then error("No colony_integrator found on top") end
-
 local me_bridge = peripheral.wrap("bottom")
-if not me_bridge then error("No me_bridge found on bottom") end
+local chest = peripheral.find("inventory")  -- assumes chest/barrel is connected
 
-local chest = peripheral.find("minecraft:chest") or peripheral.find("minecraft:barrel")
-if not chest then error("No chest or barrel found for output") end
+if not colony_integrator then error("No colony integrator found on top") end
+if not me_bridge then error("No ME Bridge found on bottom") end
+if not chest then error("No chest/barrel found") end
 
--- Distance calculation
-local function distance(pos1, pos2)
-    local dx = pos1.x - pos2.x
-    local dy = pos1.y - pos2.y
-    local dz = pos1.z - pos2.z
-    return math.sqrt(dx*dx + dy*dy + dz*dz)
+-- Helper: safe export from ME Bridge to chest
+local function exportItem(stack)
+    local itemStack = {name = stack.name, count = stack.count or 1}
+    local sides = {"top","bottom","left","right","front","back"}
+    for _, side in ipairs(sides) do
+        local ok, exported = pcall(function()
+            return me_bridge.exportItem(itemStack, side)
+        end)
+        if ok and exported > 0 then
+            print(string.format("Exported %d/%d of %s to %s", exported, itemStack.count, stack.name, side))
+            return exported
+        end
+    end
+    print("Failed to export " .. stack.name)
+    return 0
 end
 
--- Process builder requests within 5 blocks
-local function processNearbyBuilders()
+-- Helper: get Ezra's Builder Hut requests
+local function getEzraRequests()
     local requests = colony_integrator.getRequests() or {}
+    local ezraRequests = {}
     for _, req in ipairs(requests) do
-        if req.target:match("Builder") then
-            local hutPos = req.hutPosition
-            if hutPos and distance(computerPos, hutPos) <= 5 then
-                local itemName = req.items[1].name
-                local itemCount = req.count
-
-                -- Attempt to export from ME Bridge into chest
-                local exported = me_bridge.exportItem({name = itemName, count = itemCount}, chest)
-                print(string.format("Exported %d/%d of %s to chest", exported, itemCount, itemName))
-            end
+        if req.target and req.target:match("Builder Ezra") then
+            table.insert(ezraRequests, req)
         end
+    end
+    return ezraRequests
+end
+
+-- Process Ezra's requests
+local function processRequests()
+    local requests = getEzraRequests()
+    for _, req in ipairs(requests) do
+        local item = req.items[1].name
+        local needed = req.count
+        local exported = exportItem({name=item, count=needed})
+        print(string.format("Requested %d of %s, exported %d", needed, item, exported))
     end
 end
 
--- Main loop
+-- Main loop: check requests continuously
 while true do
-    processNearbyBuilders()
-    sleep(10)
+    local requests = getEzraRequests()
+    if #requests > 0 then
+        processRequests()
+    else
+        -- No requests; wait 10 seconds before next scan
+        sleep(10)
+    end
 end
