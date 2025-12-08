@@ -7,6 +7,7 @@ if not colony then
     print("Colony Integrator NOT found on top")
     return
 end
+
 if not meBridge then
     print("ME Bridge NOT found on bottom")
     return
@@ -19,7 +20,9 @@ print("ME Bridge detected on bottom")
 local function findExportSide()
     local sides = {"top","bottom","left","right","front","back"}
     for _, side in ipairs(sides) do
-        local ok, res = pcall(meBridge.exportItem, meBridge, {name="minecraft:stone", count=1}, side)
+        local ok, res = pcall(function()
+            return meBridge.exportItem({name="minecraft:stone", count=1}, side)
+        end)
         if ok then return side end
     end
     return nil
@@ -40,16 +43,33 @@ while true do
         print("No requests found")
     else
         for _, req in ipairs(requests) do
-            if req.target:match("Builder") and req.items and req.items[1] then
-                local itemName = req.items[1].name
-                local count    = req.count
-                local aeItems  = meBridge.listItems()
-                local available = 0
-                for _, stack in ipairs(aeItems or {}) do
-                    if stack.name == itemName then
-                        available = stack.count
-                        break
+            if req.target:match("Builder") then
+                if req.items and req.items[1] then
+                    local itemName = req.items[1].name
+                    local count    = req.count
+                    local aeItems  = meBridge.listItems()
+                    local available = 0
+                    if aeItems then
+                        for _, stack in ipairs(aeItems) do
+                            if stack.name == itemName then
+                                available = stack.count
+                                break
+                            end
+                        end
+                    end
+
+                    if available > 0 then
+                        local toSend = math.min(available, count)
+                        local ok, sent = pcall(function()
+                            return meBridge.exportItem({name=itemName, count=toSend}, exportSide)
+                        end)
+                        print(string.format("Exporting %d of %s to %s: %s", toSend, itemName, req.target, sent or "failed"))
+                    else
+                        print("Item "..itemName.." not available in AE2")
                     end
                 end
-
-                if availa
+            end
+        end
+    end
+    sleep(5)
+end
