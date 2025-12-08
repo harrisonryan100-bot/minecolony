@@ -1,0 +1,76 @@
+------------------------------------------------------------
+-- AE2ColonyWarehouse (Tile-Based)
+-- Updated for fixed peripheral sides
+------------------------------------------------------------
+
+--------------------
+-- USER SETTINGS
+--------------------
+local SCAN_INTERVAL  = 10
+local LOG_FILE       = "ae2colonywarehouse.log"
+local DEBUG          = true
+local DETAIL_TIMEOUT = 30
+local CRAFT_TIMEOUT  = 90
+local MAX_ATTEMPTS   = 3
+local SKIP_PATTERNS = {
+  "Tool of class",
+  "Hoe", "Shovel", "Axe", "Pickaxe", "Bow", "Sword", "Shield",
+  "Helmet", "Chestplate", "Leggings", "Boots", "Tunic", "Leather Cap",
+  "Rallying Banner", "Crafter", "Compostable", "Fertilizer",
+  "Flowers", "Food", "Fuel", "Smeltable Ore", "Stack List"
+}
+
+--------------------
+-- GLOBAL CRAFTING TRACKER
+--------------------
+local craftingTracker = {}
+
+--------------------
+-- HELPER FUNCTIONS
+--------------------
+local function dprint(...)
+  if DEBUG then print("[DEBUG]", ...) end
+end
+
+local function safePeripheralCall(periph, method, ...)
+  if type(periph[method]) ~= "function" then
+    dprint("Method " .. method .. " not available on peripheral")
+    return nil, "Method " .. method .. " not available"
+  end
+  local ok, result = pcall(periph[method], periph, ...)
+  if not ok then
+    dprint("Error calling " .. method .. ": " .. tostring(result))
+    return nil, result
+  end
+  return result, nil
+end
+
+--------------------
+-- PERIPHERAL SETUP
+--------------------
+-- Wrap fixed sides
+local monitor = peripheral.find("monitor")
+if not monitor then error("No advanced monitor found.") end
+monitor.setTextScale(0.5)
+monitor.setBackgroundColor(colors.black)
+monitor.setTextColor(colors.white)
+monitor.clear()
+monitor.setCursorPos(1,1)
+monitor.setCursorBlink(false)
+
+local meBridge = peripheral.wrap("bottom")
+if not meBridge then error("ME Bridge not detected on 'bottom' side") end
+
+local colony = peripheral.wrap("top")
+if not colony then error("Colony Integrator not detected on 'top' side") end
+if not colony.isInColony then error("Colony Integrator is not inside a colony.") end
+
+print("Colony Integrator detected on top")
+print("ME Bridge detected on bottom")
+
+-- All remaining functions (safeExportItemToTop, safeCraftItem, displayTileMenu, processRequests, etc.)
+-- remain unchanged. Just make sure every reference to 'meBridge' or 'colony' uses the variables above.
+
+------------------------------------------------------------
+-- End of AE2ColonyWarehouse peripheral fix
+------------------------------------------------------------
