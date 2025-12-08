@@ -1,76 +1,55 @@
-local colony = peripheral.wrap("top")
-local me = peripheral.wrap("bottom")
-local TARGET_SIDE = "right"
+local colony=peripheral.wrap("top")
+local me=peripheral.wrap("bottom")
+local TARGET_SIDE="right"
 
--- Netherite tool whitelist
-local netheriteTools = {
-  ["minecraft:netherite_pickaxe"]=true, ["minecraft:netherite_axe"]=true,
-  ["minecraft:netherite_shovel"]=true, ["minecraft:netherite_hoe"]=true,
-  ["minecraft:netherite_sword"]=true
-}
-local function isNetheriteTool(id) return netheriteTools[id] end
+local netherite={["minecraft:netherite_pickaxe"]=true,["minecraft:netherite_axe"]=true,
+["minecraft:netherite_shovel"]=true,["minecraft:netherite_hoe"]=true,["minecraft:netherite_sword"]=true}
 
--- Safe colony call
-local function safeGetRequests()
-  local ok,res = pcall(function() return colony.getRequests() end)
-  if not ok then print("⚠ getRequests() error:",res) return {} end
-  return res or {}
+local function isBuilderTarget(t)
+  local s={}
+  for k,v in pairs(t or {}) do if type(v)=="string" then s[#s+1]=v:lower() end end
+  for _,v in ipairs(s) do if v:find("builder") then return true end end
+  return false
 end
 
--- AE2 helpers
-local function getItemCount(id)
-  local items = me.getItems() or {}
-  local total = 0
-  for _,it in ipairs(items) do
-    if it and it.name==id then total=total+(it.count or 0) end
-  end
+local function normItem(it)
+  local id = it.name or it.id or (it.item and it.item.name) or (it.item and it.item.id)
+  local cnt = it.count or it.needed or it.quantity or 1
+  return id, cnt
+end
+
+local function getCount(id)
+  local total=0; for _,x in ipairs(me.getItems() or {}) do if x.name==id then total=total+(x.count or 0) end end
   return total
 end
 
-local function pushItem(id, quota)
-  print("→ Attempting to fulfill "..quota.."x "..id)
-  local available = getItemCount(id)
-  print("   AE2 reports "..available.." available")
-  if available >= quota then
-    local ok = me.exportItem({name=id,count=quota},TARGET_SIDE)
-    print("   Export result="..tostring(ok))
+local function push(id,cnt)
+  local have=getCount(id)
+  if have>=cnt then
+    local ok=me.exportItem({name=id,count=cnt},TARGET_SIDE)
+    print("✔",cnt,"x",id,"exported:",tostring(ok))
     return ok
   else
-    print("   Not enough stock ("..available.."/"..quota..")")
-    return false
+    print("⚠ stock",id,have.."/"..cnt); return false
   end
 end
 
--- Main loop: filter builder requests
 while true do
-  local reqs = safeGetRequests()
-  print("Total colony requests: "..#reqs)
-  local handled,removed = 0,0
+  local ok,reqs=pcall(function() return colony.getRequests() end)
+  if not ok then print("getRequests() error") sleep(10) goto continue end
+  print("Total:",#reqs)
+  local handled,removed=0,0
   for _,r in ipairs(reqs) do
-    local tgt = r.target or {}
-    local tname = tgt.name or (tgt.type or "unknown")
-    if tname:lower():find("builder") then
-      print("Builder request from "..tname.." ("..r.desc..")")
+    if isBuilderTarget(r.target) then
       for _,it in ipairs(r.items or {}) do
-        local id = it.name
-        local quota = it.count or 1
+        local id,cnt=normItem(it)
         if id then
-          if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
-            if not isNetheriteTool(id) then
-              print("   🗑 skipped non-Netherite tool: "..id)
-              removed=removed+1
-            else
-              if pushItem(id,quota) then handled=handled+1 end
-            end
-          else
-            if pushItem(id,quota) then handled=handled+1 end
-          end
-        else
-          print("   ⚠ item missing name field")
+          local isTool = id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword")
+          if isTool and not netherite[id] then removed=removed+1 else if push(id,cnt) then handled=handled+1 end end
         end
       end
     end
   end
-  print("Loop complete: handled "..handled.." items, removed "..removed.." non-Netherite")
-  sleep(10)
+  print("Loop:",handled,"handled,",removed,"removed")
+  ::continue:: sleep(10)
 end
