@@ -1,135 +1,76 @@
--- ===========================================
--- MineColonies <-> AE2 Builder Automation Script
--- Colony Integrator on TOP, ME Bridge on BOTTOM
--- Processes Builder Hut requests (PENDING or IN_PROGRESS)
--- Parses quantity prefixes in request.name into AE2 item IDs
--- Logs activity to automation_log.txt
--- Does not call requestCraft; waits until items appear in AE2
--- ===========================================
+local colony = peripheral.wrap("top")
+local me = peripheral.wrap("bottom")
+local TARGET_SIDE = "right"
 
--- Wrap peripherals
-colony = peripheral.wrap("top")      -- Colony Integrator
-me = peripheral.wrap("bottom")       -- ME Bridge
-
-if not colony then
-    print("Colony Integrator NOT detected on top! Exiting.")
-    return
-else
-    print("Colony Integrator detected on top")
-end
-
-if not me then
-    print("ME Bridge NOT detected on bottom! Exiting.")
-    return
-else
-    print("ME Bridge detected on bottom")
-end
-
--- Clear previous log
-if fs.exists("automation_log.txt") then
-    fs.delete("automation_log.txt")
-end
-
--- Logging helper
-function log(msg)
-    local timestamped = os.date("%H:%M:%S") .. " | " .. msg
-    print(timestamped)
-    local file = fs.open("automation_log.txt", "a")
-    file.writeLine(timestamped)
-    file.close()
-end
-
--- Mapping from parsed request names to AE2 item IDs
-nameToAE2 = {
-    ["Crafting Table"] = "minecraft:crafting_table",
-    ["Polished Deepslate Panel"] = "minecraft:polished_deepslate_slab",
-    ["Spruce Fence"] = "minecraft:spruce_fence",
-    ["Oak Planks"] = "minecraft:oak_planks",
-    ["Stone Bricks"] = "minecraft:stone_bricks",
-    ["Polished Deepslate Slab"] = "minecraft:polished_deepslate_slab",
-    ["Cobblestone Extra Shingles"] = "minecraft:cobblestone" -- example mapping
+-- Netherite tool whitelist
+local netheriteTools = {
+  ["minecraft:netherite_pickaxe"]=true, ["minecraft:netherite_axe"]=true,
+  ["minecraft:netherite_shovel"]=true, ["minecraft:netherite_hoe"]=true,
+  ["minecraft:netherite_sword"]=true
 }
+local function isNetheriteTool(id) return netheriteTools[id] end
 
--- Count items in AE2 network
-function getItemCount(meBridge, itemName)
-    local items = meBridge.getItems() or {}
-    local total = 0
-    for _, item in pairs(items) do
-        if item.name == itemName then
-            total = total + (item.count or 0)
-        end
-    end
-    return total
+-- Safe colony call
+local function safeGetRequests()
+  local ok,res = pcall(function() return colony.getRequests() end)
+  if not ok then print("⚠ getRequests() error:",res) return {} end
+  return res or {}
 end
 
--- Pull from AE2 with retries (waits until items appear)
-function pullFromAE2(meBridge, itemName, count)
-    local attempts = 0
-    while attempts < 10 do
-        local available = getItemCount(meBridge, itemName)
-        if available >= count then
-            local ok = meBridge.pullItem(itemName, count)
-            log("Pulled " .. count .. "x " .. itemName .. " from AE2: " .. tostring(ok))
-            return ok
-        else
-            local missing = count - available
-            log("Not enough " .. itemName .. " in AE2 (" .. missing .. " missing), waiting...")
-            sleep(5) -- wait before retrying
-            attempts = attempts + 1
-        end
-    end
-    log("Failed to pull " .. count .. "x " .. itemName .. " after retries")
-    return false
+-- AE2 helpers
+local function getItemCount(id)
+  local items = me.getItems() or {}
+  local total = 0
+  for _,it in ipairs(items) do
+    if it and it.name==id then total=total+(it.count or 0) end
+  end
+  return total
 end
 
--- Fulfill a single Builder request
-function fulfillRequest(meBridge, request)
-    -- Parse request.name to remove quantity prefix (e.g., "1-2 Spruce Fence" -> "Spruce Fence")
-    local parsedName = nil
-    if request.name then
-        local s, e, name = string.find(request.name, "%d+%-?%d*%s+(.+)")
-        parsedName = name
-    end
-
-    local itemName = (request.items and request.items.name) or nameToAE2[parsedName]
-    if not itemName then
-        log("Could not determine AE2 item for request: " .. request.name)
-        return false
-    end
-
-    -- Determine required count
-    local totalCount = (request.items and request.items.count) or request.count or 1
-
-    local ok = pullFromAE2(meBridge, itemName, totalCount)
-    if ok then
-        log("Successfully fulfilled request: " .. totalCount .. "x " .. itemName)
-    else
-        log("Could not fulfill request yet: " .. totalCount .. "x " .. itemName)
-    end
+local function pushItem(id, quota)
+  print("→ Attempting to fulfill "..quota.."x "..id)
+  local available = getItemCount(id)
+  print("   AE2 reports "..available.." available")
+  if available >= quota then
+    local ok = me.exportItem({name=id,count=quota},TARGET_SIDE)
+    print("   Export result="..tostring(ok))
     return ok
+  else
+    print("   Not enough stock ("..available.."/"..quota..")")
+    return false
+  end
 end
 
--- Main loop
+-- Main loop: filter builder requests
 while true do
-    local requests = colony.getRequests() or {}
-    log("Found " .. #requests .. " request(s) in Colony Integrator")
-
-    for i, req in ipairs(requests) do
-        -- Only handle Builder requests
-        if req.target and string.find(req.target, "Builder") then
-            -- Only handle PENDING or IN_PROGRESS requests
-            if req.state == "PENDING" or req.state == "IN_PROGRESS" then
-                local success = fulfillRequest(me, req)
-                if success then
-                    colony.completeRequest(req)
-                    log("Marked request completed for " .. req.target)
-                else
-                    log("Will retry request for " .. req.target .. " on next loop")
-                end
+  local reqs = safeGetRequests()
+  print("Total colony requests: "..#reqs)
+  local handled,removed = 0,0
+  for _,r in ipairs(reqs) do
+    local tgt = r.target or {}
+    local tname = tgt.name or (tgt.type or "unknown")
+    if tname:lower():find("builder") then
+      print("Builder request from "..tname.." ("..r.desc..")")
+      for _,it in ipairs(r.items or {}) do
+        local id = it.name
+        local quota = it.count or 1
+        if id then
+          if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
+            if not isNetheriteTool(id) then
+              print("   🗑 skipped non-Netherite tool: "..id)
+              removed=removed+1
+            else
+              if pushItem(id,quota) then handled=handled+1 end
             end
+          else
+            if pushItem(id,quota) then handled=handled+1 end
+          end
+        else
+          print("   ⚠ item missing name field")
         end
-        -- Non-builder requests are ignored silently
+      end
     end
-
-    sleep(2)
+  end
+  print("Loop complete: handled "..handled.." items, removed "..removed.." non-Netherite")
+  sleep(10)
 end
