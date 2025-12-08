@@ -1,11 +1,11 @@
 -- User Settings
-local SCAN_INTERVAL = 10  -- seconds between scans when idle
-local EXPORT_CHEST_SIDE = "front"  -- side of the chest relative to the computer
-local MAX_DISTANCE = 5  -- only Builders Huts within 5 blocks
+local SCAN_INTERVAL = 10          -- seconds between scans when idle
+local EXPORT_CHEST_SIDE = "front" -- side of the chest relative to the computer
+local MAX_DISTANCE = 5            -- only Builders Huts within 5 blocks
 
--- Peripherals
-local colony_integrator = peripheral.find("colonyIntegrator") or error("No colony_integrator (top) found")
-local me_bridge = peripheral.find("meBridge") or error("No me_bridge (bottom) found")
+-- Peripherals (explicitly by side)
+local colony_integrator = peripheral.wrap("top") or error("No colony_integrator found on top")
+local me_bridge = peripheral.wrap("bottom") or error("No me_bridge found on bottom")
 local chest = peripheral.wrap(EXPORT_CHEST_SIDE) or error("No chest detected on side " .. EXPORT_CHEST_SIDE)
 
 -- Helper function to calculate distance (manhattan)
@@ -30,8 +30,8 @@ while true do
     local requests = {}
     local ok, allRequests = pcall(colony_integrator.getRequests)
     if ok and allRequests then
-        -- Filter for Builders Huts within 5 blocks
-        local compPos = {x=0, y=0, z=0}  -- default computer position (adjust if needed)
+        -- Filter for Builders Huts within MAX_DISTANCE blocks
+        local compPos = {x=0, y=0, z=0} -- adjust if your computer is not at origin
         for _, req in ipairs(allRequests) do
             local targetPos = req.targetPosition or {x=0, y=0, z=0}
             local dist = distance(compPos, targetPos)
