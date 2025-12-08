@@ -1,15 +1,11 @@
 -- Wrap peripherals
 local colony_integrator = peripheral.wrap("top")
-if not colony_integrator then
-    error("No colony integrator found on top")
-end
+if not colony_integrator then error("No colony_integrator found on top") end
 
 local me_bridge = peripheral.wrap("bottom")
-if not me_bridge then
-    error("No ME Bridge found on bottom")
-end
+if not me_bridge then error("No me_bridge found on bottom") end
 
--- Safe export function (using the earlier tested method)
+-- Safe export function: tries all sides until it works
 local function safeExportItem(stack)
     local sides = {"top", "bottom", "left", "right", "front", "back"}
     for _, side in ipairs(sides) do
@@ -25,37 +21,23 @@ local function safeExportItem(stack)
     return 0
 end
 
--- Main loop
+-- Main automation loop
 while true do
-    local allRequests = colony_integrator.getRequests() or {} -- safe fallback
-    print("Found " .. #allRequests .. " requests")
+    local allRequests = colony_integrator.getRequests() or {}
+    print("Found " .. #allRequests .. " requests from colony")
 
     for _, req in ipairs(allRequests) do
-        -- Only process requests for Ezra's Builder Hut
-        if req.target:find("Builder") then
+        if req.target:find("Builder") and req.target:find("Ezra") then
             local itemName = req.items[1].name
             local countNeeded = req.count
 
-            -- Get current AE2 count
-            local aeItems = me_bridge.listItems() or {}
-            local available = 0
-            for _, item in ipairs(aeItems) do
-                if item.name == itemName then
-                    available = item.count or 0
-                    break
-                end
-            end
+            print("Attempting to fulfill request for " .. countNeeded .. "x " .. itemName .. " to Ezra's Builder Hut")
 
-            if available > 0 then
-                local toExport = math.min(available, countNeeded)
-                local exported = safeExportItem({ name = itemName, count = toExport })
-                print("Attempted to export " .. toExport .. " of " .. itemName .. ", actually exported: " .. exported)
-            else
-                print("No " .. itemName .. " available in AE2")
-            end
+            local exported = safeExportItem({ name = itemName, count = countNeeded })
+            print("Request result: " .. exported .. "/" .. countNeeded .. " exported")
         end
     end
 
-    print("Cycle complete, waiting 10 seconds...")
+    print("Cycle complete, waiting 10 seconds before next check...")
     sleep(10)
 end
