@@ -1,41 +1,29 @@
--- Wrap peripherals
-local colony_integrator = peripheral.wrap("top")  -- integrator on top
-local me_bridge        = peripheral.wrap("bottom") -- ME Bridge on bottom
-local chest            = peripheral.wrap("back")   -- chest on back
+local colony_integrator = peripheral.wrap("top")  -- Integrator
+local me_bridge = peripheral.wrap("bottom")       -- AE2 Bridge
+local chest = peripheral.wrap("left")             -- Output chest
 
-if not colony_integrator then error("No Colony Integrator found on top!") end
-if not me_bridge then error("No ME Bridge found on bottom!") end
-if not chest then error("No chest found on back!") end
+if not colony_integrator or not me_bridge or not chest then
+    error("Missing required peripherals")
+end
 
--- Helper function: export items from ME Bridge to chest
-local function exportItemToChest(itemName, count)
-    local stack = { name = itemName, count = count }
-    local sides = {"top","bottom","left","right","front","back"} -- just in case
+while true do
+    local allRequests = colony_integrator.getRequests() or {}
 
-    -- Attempt export to chest
-    local exported = 0
-    for _, side in ipairs(sides) do
-        local ok, result = pcall(function()
-            return me_bridge.exportItem(stack, side)
-        end)
-        if ok and result > 0 then
-            exported = exported + result
+    -- Build a list of items requested for Builder's Hut only
+    local builderRequests = {}
+    for _, req in ipairs(allRequests) do
+        if req.target == "Builder's Hut" then
+            local itemName = req.items[1].name
+            builderRequests[itemName] = (builderRequests[itemName] or 0) + req.count
         end
     end
 
-    if exported > 0 then
-        print("Exported " .. exported .. "x " .. itemName .. " to chest.")
-    else
-        print("Failed to export " .. itemName)
+    -- Export each requested item from AE2 to the chest
+    for itemName, count in pairs(builderRequests) do
+        local exported = me_bridge.exportItem({name=itemName, count=count}, "left")  -- assuming chest is on left
+        print("Exported", exported, "of", itemName, "to chest")
     end
 
-    return exported
-end
-
--- Example: scan requests from integrator and export
-local requests = colony_integrator.getRequests()
-for _, req in ipairs(requests) do
-    local itemName = req.items[1].name
-    local itemCount = req.count
-    exportItemToChest(itemName, itemCount)
+    -- Pause before next scan
+    sleep(10)
 end
