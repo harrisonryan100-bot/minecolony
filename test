@@ -92,16 +92,8 @@ local function exportItem(id, count)
   end
 end
 
--- Push logic with Netherite filter
+-- Push logic
 local function pushItem(id, quota)
-  -- Skip non-Netherite tools
-  if id:find("_") and id:find("netherite") == nil and id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
-    if not isNetheriteTool(id) then
-      log("⚠ Skipping non-Netherite tool request: " .. id)
-      return
-    end
-  end
-
   local available = getItemCount(id)
   if available >= quota then
     exportItem(id, quota)
@@ -145,11 +137,19 @@ while true do
       for _, item in ipairs(req.items or {}) do
         local id = item.name
         if id and not seen[id] then
+          -- Filter: remove non-Netherite tools
+          if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
+            if not isNetheriteTool(id) then
+              log("🗑 Removed non-Netherite tool request: " .. id)
+              goto continue
+            end
+          end
           local quota = (item.maxCount and item.maxCount == 1) and 4 or 64
           pushItem(id, quota)
           seen[id] = true
           handled = handled + 1
         end
+        ::continue::
       end
     end
 
@@ -160,11 +160,19 @@ while true do
         for _, it in ipairs(safeGetBuilderResources(loc)) do
           local id = it.item and it.item.name
           if id and not seen[id] then
+            -- Filter: remove non-Netherite tools
+            if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
+              if not isNetheriteTool(id) then
+                log("🗑 Removed non-Netherite tool request from builder: " .. id)
+                goto continue
+              end
+            end
             local quota = it.needed or 1
             pushItem(id, quota)
             seen[id] = true
             handled = handled + 1
           end
+          ::continue::
         end
       else
         log("Builder at (" .. (loc.x or "?") .. "," .. (loc.y or "?") .. "," .. (loc.z or "?") .. ") is idle, skipping")
