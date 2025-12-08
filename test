@@ -1,2 +1,14 @@
-local requests = top.getRequests()  -- assuming top = colony_integrator
+-- Detect peripherals
+local colony_integrator = peripheral.wrap("top")
+if not colony_integrator then
+    error("No colony integrator found on top")
+end
+
+local me_bridge = peripheral.wrap("bottom")
+if not me_bridge then
+    error("No ME Bridge found on bottom")
+end
+
+-- Test: print requests
+local requests = colony_integrator.getRequests()
 print(textutils.serialize(requests))
