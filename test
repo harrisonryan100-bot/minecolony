@@ -1,75 +1,9 @@
--- Simple AE2 → Builder Hut Exporter
-
-local colony = peripheral.wrap("top")
 local meBridge = peripheral.wrap("bottom")
+local sides = {"top","bottom","left","right","front","back"}
 
-if not colony then
-    print("Colony Integrator NOT found on top")
-    return
-end
-
-if not meBridge then
-    print("ME Bridge NOT found on bottom")
-    return
-end
-
-print("Colony Integrator detected on top")
-print("ME Bridge detected on bottom")
-
--- Utility: find a side to export items to
-local function findExportSide()
-    local sides = {"top","bottom","left","right","front","back"}
-    for _, side in ipairs(sides) do
-        local ok, res = pcall(function()
-            return meBridge.exportItem({name="minecraft:stone", count=1}, side)
-        end)
-        if ok then return side end
-    end
-    return nil
-end
-
-local exportSide = findExportSide()
-if not exportSide then
-    print("No inventory detected next to ME Bridge to export items!")
-    return
-else
-    print("Exporting to side: "..exportSide)
-end
-
--- Main loop: scan and export requests
-while true do
-    local requests = colony.getRequests()
-    if not requests then
-        print("No requests found")
-    else
-        for _, req in ipairs(requests) do
-            if req.target:match("Builder") then
-                if req.items and req.items[1] then
-                    local itemName = req.items[1].name
-                    local count    = req.count
-                    local aeItems  = meBridge.listItems()
-                    local available = 0
-                    if aeItems then
-                        for _, stack in ipairs(aeItems) do
-                            if stack.name == itemName then
-                                available = stack.count
-                                break
-                            end
-                        end
-                    end
-
-                    if available > 0 then
-                        local toSend = math.min(available, count)
-                        local ok, sent = pcall(function()
-                            return meBridge.exportItem({name=itemName, count=toSend}, exportSide)
-                        end)
-                        print(string.format("Exporting %d of %s to %s: %s", toSend, itemName, req.target, sent or "failed"))
-                    else
-                        print("Item "..itemName.." not available in AE2")
-                    end
-                end
-            end
-        end
-    end
-    sleep(5)
+for _, side in ipairs(sides) do
+    local ok, exported = pcall(function()
+        return meBridge.pullItem({name="minecraft:stone", count=1}, side)
+    end)
+    print(side, ok, exported)
 end
