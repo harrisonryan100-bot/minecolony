@@ -1,52 +1,41 @@
 -- Wrap peripherals
-local colony_integrator = peripheral.wrap("top")
+local colony_integrator = peripheral.wrap("top")  -- integrator on top
+local me_bridge        = peripheral.wrap("bottom") -- ME Bridge on bottom
+local chest            = peripheral.wrap("back")   -- chest on back
+
 if not colony_integrator then error("No Colony Integrator found on top!") end
-
-local me_bridge = peripheral.wrap("bottom")
 if not me_bridge then error("No ME Bridge found on bottom!") end
+if not chest then error("No chest found on back!") end
 
-local chest = peripheral.find("minecraft:chest") or peripheral.find("minecraft:barrel")
-if not chest then error("No chest or barrel detected!") end
+-- Helper function: export items from ME Bridge to chest
+local function exportItemToChest(itemName, count)
+    local stack = { name = itemName, count = count }
+    local sides = {"top","bottom","left","right","front","back"} -- just in case
 
--- Helper function to export items from AE2 to chest
-local function pushToChest(itemName, count)
-    local sides = {"top","bottom","left","right","front","back"}
+    -- Attempt export to chest
+    local exported = 0
     for _, side in ipairs(sides) do
         local ok, result = pcall(function()
-            return me_bridge.exportItem({name=itemName, count=count}, side)
+            return me_bridge.exportItem(stack, side)
         end)
-        if ok and type(result) == "number" and result > 0 then
-            print("Exported " .. result .. " x " .. itemName .. " to side " .. side)
-            return result
+        if ok and result > 0 then
+            exported = exported + result
         end
     end
-    print("Failed to export " .. itemName)
-    return 0
-end
 
--- Process requests from Colony Integrator
-local function processBuilderRequests()
-    local requests = colony_integrator.getRequests()
-    if not requests or #requests == 0 then
-        print("No requests found from Colony Integrator.")
-        return
+    if exported > 0 then
+        print("Exported " .. exported .. "x " .. itemName .. " to chest.")
+    else
+        print("Failed to export " .. itemName)
     end
 
-    for _, req in ipairs(requests) do
-        local target = req.target
-        if string.find(target, "Builder") then -- Only handle Ezra's Builder Hut
-            for _, itemStack in ipairs(req.items) do
-                local needed = req.count
-                print("Processing request for " .. needed .. " x " .. itemStack.name)
-                local exported = pushToChest(itemStack.name, needed)
-                print("Requested: " .. needed .. ", Exported: " .. exported)
-            end
-        end
-    end
+    return exported
 end
 
--- Main loop: check every 10 seconds
-while true do
-    processBuilderRequests()
-    sleep(10)
+-- Example: scan requests from integrator and export
+local requests = colony_integrator.getRequests()
+for _, req in ipairs(requests) do
+    local itemName = req.items[1].name
+    local itemCount = req.count
+    exportItemToChest(itemName, itemCount)
 end
