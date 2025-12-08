@@ -1,34 +1,25 @@
---------------------
--- CONFIG
---------------------
-local INVENTORY_SIDE = "back" -- side where your chest/barrel is
-local itemsToSend = {
-    {name="minecraft:iron_ingot", count=10},
-    {name="minecraft:oak_planks", count=16},
-    -- add more items here
-}
+-- Wrap peripherals
+local me_bridge = peripheral.find("meBridge")
+if not me_bridge then error("No ME Bridge found!") end
 
---------------------
--- SETUP
---------------------
-local output = peripheral.wrap(INVENTORY_SIDE)
-if not output or type(output.pushItems) ~= "function" then
-    error("No valid chest/barrel found on side "..INVENTORY_SIDE)
-end
+local chest = peripheral.find("minecraft:chest") or peripheral.find("minecraft:barrel")
+if not chest then error("No chest or barrel detected!") end
 
---------------------
--- PUSH ITEMS
---------------------
-for _, stack in ipairs(itemsToSend) do
-    -- Loop through the computer inventory (slots 1-16)
-    for slot=1,16 do
-        local item = peripheral.call("inventory", "getItemDetail", slot)
-        if item and item.name == stack.name then
-            local amount = math.min(stack.count, item.count)
-            local moved = output.pushItems("inventory", slot, amount) -- slot from computer to chest
-            print("Moved", moved or 0, stack.name)
-            stack.count = stack.count - moved
-            if stack.count <= 0 then break end
+-- Function to auto-detect output side for the chest
+local function pushToChest(itemName, count)
+    local sides = {"top","bottom","left","right","front","back"}
+    for _, side in ipairs(sides) do
+        local ok, result = pcall(function()
+            return me_bridge.exportItem({name=itemName, count=count}, side)
+        end)
+        if ok and type(result) == "number" and result > 0 then
+            print("Exported " .. result .. " x " .. itemName .. " to side " .. side)
+            return result
         end
     end
+    print("Failed to export " .. itemName)
+    return 0
 end
+
+-- Example: Push 10 cobblestone from AE2 into chest
+pushToChest("minecraft:cobblestone", 10)
