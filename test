@@ -1,24 +1,21 @@
--- Wrap peripherals
-local colony = peripheral.wrap("top")        -- Colony Integrator
-local meBridge = peripheral.wrap("bottom")   -- ME Bridge
-local chestSide = "back"                      -- Adjust this to where the chest is connected
+-- Wrap the ME Chest
+local meChest = peripheral.wrap("bottom")  -- Your ME Chest
+local targetSide = "back"                  -- Side of connected chest or Builder Hut
 
-if not colony then error("Colony Integrator not found on top") end
-if not meBridge then error("ME Bridge not found on bottom") end
-if not peripheral.isPresent(chestSide) then error("No chest detected on side " .. chestSide) end
+if not meChest then error("ME Chest not found on bottom") end
+if not peripheral.isPresent(targetSide) then error("No inventory found on side " .. targetSide) end
 
--- Function to push items from AE2 into connected chest
-local function pushItemToChest(itemName, count)
+-- Push items from ME Chest to target inventory
+local function pushItemFromME(itemName, count)
     local remaining = count
     while remaining > 0 do
-        -- Create item stack
         local stack = { name = itemName, count = remaining }
 
-        -- Attempt to pull from ME Bridge into chest
-        local ok, pulled = pcall(meBridge.pushItem, meBridge, chestSide, stack)
-        if ok and pulled and pulled > 0 then
-            print("Pushed " .. pulled .. "x " .. itemName .. " to chest")
-            remaining = remaining - pulled
+        -- pushItem exists on inventories like ME Chest, Ender Chest, etc.
+        local ok, pushed = pcall(meChest.pushItem, meChest, targetSide, stack)
+        if ok and pushed and pushed > 0 then
+            print("Pushed " .. pushed .. "x " .. itemName .. " to " .. targetSide)
+            remaining = remaining - pushed
         else
             print("Failed to push " .. itemName .. ", retrying...")
             sleep(1)
@@ -26,14 +23,15 @@ local function pushItemToChest(itemName, count)
     end
 end
 
--- Example request processing
+-- Example: loop through Builder Hut requests
+local colony = peripheral.wrap("top")  -- Colony Integrator
 local requests = colony.getRequests() or {}
+
 for _, req in ipairs(requests) do
-    -- Only handle Builder Hut requests
     if req.target:find("Builder") and req.items and #req.items > 0 then
         local item = req.items[1].name
         local count = req.count or 1
-        print("Attempting to send " .. count .. "x " .. item .. " to " .. req.target)
-        pushItemToChest(item, count)
+        print("Sending " .. count .. "x " .. item .. " to Builder Hut")
+        pushItemFromME(item, count)
     end
 end
