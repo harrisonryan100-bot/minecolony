@@ -1,35 +1,59 @@
--- AE2 Colony Warehouse Export for Ezra's Builder Hut
--- Only exports items requested by Ezra's Builder Hut
--- Pushes items to ME Bridge output side (back) or a connected barrel
+--------------------
+-- Export to Ezra's Builder Hut
+--------------------
 
-local meBridge = peripheral.find("meBridge")
-local colony  = peripheral.find("colonyIntegrator")
-if not meBridge then error("No ME Bridge found!") end
-if not colony then error("No Colony Integrator found!") end
+local me_bridge = peripheral.find("meBridge")
+local colony_integrator  = peripheral.find("colonyIntegrator")
 
-local OUTPUT_SIDE = "back"  -- Adjust to your barrel/ME Chest side
+if not me_bridge then error("No ME Bridge found!") end
+if not colony_integrator then error("No Colony Integrator found!") end
 
-local function exportToBuilderHut()
-    local requests = colony.getRequests() or {}
+local OUTPUT_SIDE = "back"  -- Set to the side of the barrel or ME Chest
+
+local function dprint(...)
+    print("[DEBUG]", ...)
+end
+
+local function safePeripheralCall(periph, method, ...)
+    if type(periph[method]) ~= "function" then
+        dprint("Method " .. method .. " not available on peripheral")
+        return nil, "Method not available"
+    end
+    local ok, result = pcall(periph[method], periph, ...)
+    if not ok then
+        dprint("Error calling " .. method .. ": " .. tostring(result))
+        return nil, result
+    end
+    return result
+end
+
+-- Export a stack safely
+local function safeExport(stack)
+    local ok, exported = safePeripheralCall(me_bridge, "exportItem", stack, OUTPUT_SIDE)
+    if ok and type(exported) == "number" and exported > 0 then
+        dprint(string.format("Exported %d x %s to Ezra's Builder Hut via %s", exported, stack.name, OUTPUT_SIDE))
+        return exported
+    else
+        dprint(string.format("Failed to export %s to Ezra's Builder Hut via %s", stack.name, OUTPUT_SIDE))
+        return 0
+    end
+end
+
+-- Main function: process only Ezra's Builder Hut requests
+local function exportToEzrasBuilderHut()
+    local requests = safePeripheralCall(colony_integrator, "getRequests") or {}
     for _, req in ipairs(requests) do
-        -- Only handle Ezra's Builder Hut requests
         if req.target:match("Builder") then
             local itemName  = req.items[1].name
             local itemCount = req.count
-            local stack     = { name = itemName, count = itemCount }
-
-            local ok, exported = pcall(meBridge.exportItem, meBridge, stack, OUTPUT_SIDE)
-            if ok and type(exported) == "number" and exported > 0 then
-                print(string.format("Exported %d x %s to Ezra's Builder Hut via %s", exported, itemName, OUTPUT_SIDE))
-            else
-                print(string.format("Failed to export %s to Ezra's Builder Hut via %s", itemName, OUTPUT_SIDE))
-            end
+            local stack = { name = itemName, count = itemCount }
+            safeExport(stack)
         end
     end
 end
 
--- Main loop: scan and export every 10 seconds
+-- Loop
 while true do
-    exportToBuilderHut()
+    exportToEzrasBuilderHut()
     sleep(10)
 end
