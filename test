@@ -1,38 +1,39 @@
--- Wrap your ME Bridge peripheral
-local meBridge = peripheral.wrap("bottom")  -- adjust side if different
-if not meBridge then error("ME Bridge not found on bottom") end
+-- Wrap peripherals
+local colony = peripheral.wrap("top")        -- Colony Integrator
+local meBridge = peripheral.wrap("bottom")   -- ME Bridge
+local chestSide = "back"                      -- Adjust this to where the chest is connected
 
--- Function to safely export a stack to any valid side of ME Bridge
-local function exportToBridge(stack)
-    local sides = {"top","bottom","left","right","front","back"}
-    for _, side in ipairs(sides) do
-        if type(meBridge.exportItem) == "function" then
-            local ok, exported = pcall(meBridge.exportItem, meBridge, stack, side)
-            if ok and exported and exported > 0 then
-                print("Exported " .. exported .. "x " .. stack.name .. " to side " .. side)
-                return exported
-            end
+if not colony then error("Colony Integrator not found on top") end
+if not meBridge then error("ME Bridge not found on bottom") end
+if not peripheral.isPresent(chestSide) then error("No chest detected on side " .. chestSide) end
+
+-- Function to push items from AE2 into connected chest
+local function pushItemToChest(itemName, count)
+    local remaining = count
+    while remaining > 0 do
+        -- Create item stack
+        local stack = { name = itemName, count = remaining }
+
+        -- Attempt to pull from ME Bridge into chest
+        local ok, pulled = pcall(meBridge.pushItem, meBridge, chestSide, stack)
+        if ok and pulled and pulled > 0 then
+            print("Pushed " .. pulled .. "x " .. itemName .. " to chest")
+            remaining = remaining - pulled
+        else
+            print("Failed to push " .. itemName .. ", retrying...")
+            sleep(1)
         end
     end
-    print("Failed to export " .. stack.name .. " to any side")
-    return 0
 end
 
--- Example list of requests from your Colony Integrator
--- Replace this with colony.getRequests() in your full script
-local requests = {
-    { target="Builder Ezra P. Barrett", name="Polished Deepslate Slab", item="minecraft:polished_deepslate_slab", count=3 },
-    { target="Builder's Hut", name="Crafting Table", item="minecraft:crafting_table", count=1 },
-    { target="Builder's Hut", name="Spruce Fence", item="minecraft:spruce_fence", count=2 }
-}
-
--- Process each request
+-- Example request processing
+local requests = colony.getRequests() or {}
 for _, req in ipairs(requests) do
-    local stack = { name=req.item, count=req.count }
-    local exported = exportToBridge(stack)
-    if exported >= req.count then
-        print("Successfully fulfilled " .. req.count .. "x " .. req.item .. " for " .. req.target)
-    else
-        print("Could not fulfill full request for " .. req.item .. " ("..exported.."/"..req.count..")")
+    -- Only handle Builder Hut requests
+    if req.target:find("Builder") and req.items and #req.items > 0 then
+        local item = req.items[1].name
+        local count = req.count or 1
+        print("Attempting to send " .. count .. "x " .. item .. " to " .. req.target)
+        pushItemToChest(item, count)
     end
 end
