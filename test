@@ -1,36 +1,55 @@
-print("=== Peripheral Check ===")
+-- Simple AE2 → Builder Hut Exporter
 
-local meBridge = peripheral.wrap("bottom")
 local colony = peripheral.wrap("top")
+local meBridge = peripheral.wrap("bottom")
 
-if meBridge then
-    print("ME Bridge detected on bottom")
-    print("Available functions:")
-    for k,v in pairs(meBridge) do if type(v)=="function" then print("  "..k) end end
+if not colony then
+    print("Colony Integrator NOT found on top")
+    return
+end
+if not meBridge then
+    print("ME Bridge NOT found on bottom")
+    return
+end
 
-    local itemsFunc = meBridge.getItems or meBridge.getItemList
-    if itemsFunc then
-        local items = itemsFunc()
-        print("Items in AE2:", #items)
-        for i=1, math.min(5,#items) do
-            print(string.format("  %dx %s", items[i].count or 0, items[i].name or "unknown"))
-        end
+print("Colony Integrator detected on top")
+print("ME Bridge detected on bottom")
+
+-- Utility: find a side to export items to
+local function findExportSide()
+    local sides = {"top","bottom","left","right","front","back"}
+    for _, side in ipairs(sides) do
+        local ok, res = pcall(meBridge.exportItem, meBridge, {name="minecraft:stone", count=1}, side)
+        if ok then return side end
+    end
+    return nil
+end
+
+local exportSide = findExportSide()
+if not exportSide then
+    print("No inventory detected next to ME Bridge to export items!")
+    return
+else
+    print("Exporting to side: "..exportSide)
+end
+
+-- Main loop: scan and export requests
+while true do
+    local requests = colony.getRequests()
+    if not requests then
+        print("No requests found")
     else
-        print("No function to list items available")
-    end
-else
-    print("ME Bridge not detected on bottom")
-end
+        for _, req in ipairs(requests) do
+            if req.target:match("Builder") and req.items and req.items[1] then
+                local itemName = req.items[1].name
+                local count    = req.count
+                local aeItems  = meBridge.listItems()
+                local available = 0
+                for _, stack in ipairs(aeItems or {}) do
+                    if stack.name == itemName then
+                        available = stack.count
+                        break
+                    end
+                end
 
-if colony then
-    print("Colony Integrator detected on top")
-    local requests = colony.getRequests() or {}
-    print("Requests found:", #requests)
-    for i=1, math.min(5,#requests) do
-        local r = requests[i]
-        local name = r.items and r.items[1] and r.items[1].name or "unknown"
-        print(string.format("  %s x%d -> %s", name, r.count or 0, r.target or "unknown"))
-    end
-else
-    print("Colony Integrator not detected on top")
-end
+                if availa
