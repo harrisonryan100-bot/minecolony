@@ -2,7 +2,7 @@
 -- MineColonies <-> AE2 Builder Automation Script
 -- Colony Integrator on TOP, ME Bridge on BOTTOM
 -- Processes Builder Hut requests (PENDING or IN_PROGRESS)
--- Parses request.name into AE2 item IDs if items.name is nil
+-- Parses quantity prefixes in request.name into AE2 item IDs
 -- Logs activity to automation_log.txt
 -- ===========================================
 
@@ -38,7 +38,7 @@ function log(msg)
     file.close()
 end
 
--- Mapping from request names to AE2 item IDs
+-- Mapping from parsed request names to AE2 item IDs
 -- Add more entries for all items your Builder Hut can request
 nameToAE2 = {
     ["Crafting Table"] = "minecraft:crafting_table",
@@ -46,7 +46,8 @@ nameToAE2 = {
     ["Spruce Fence"] = "minecraft:spruce_fence",
     ["Oak Planks"] = "minecraft:oak_planks",
     ["Stone Bricks"] = "minecraft:stone_bricks",
-    ["Polished Deepslate Slab"] = "minecraft:polished_deepslate_slab"
+    ["Polished Deepslate Slab"] = "minecraft:polished_deepslate_slab",
+    ["Cobblestone Extra Shingles"] = "minecraft:cobblestone" -- example, map to actual AE2 ID
 }
 
 -- Count items in AE2 network
@@ -54,76 +55,4 @@ function getItemCount(meBridge, itemName)
     local items = meBridge.getItems() or {}
     local total = 0
     for _, item in pairs(items) do
-        if item.name == itemName then
-            total = total + (item.count or 0)
-        end
-    end
-    return total
-end
-
--- Pull or request craft from AE2 with retries
-function pullOrCraft(meBridge, itemName, count)
-    local attempts = 0
-    while attempts < 5 do
-        local available = getItemCount(meBridge, itemName)
-        if available >= count then
-            local ok = meBridge.pullItem(itemName, count)
-            log("Pulled " .. count .. "x " .. itemName .. " from AE2: " .. tostring(ok))
-            return ok
-        else
-            local missing = count - available
-            log("Not enough " .. itemName .. " in AE2, requesting craft of " .. missing)
-            meBridge.requestCraft(itemName, missing)
-            sleep(2) -- wait for AE2 to start crafting
-            attempts = attempts + 1
-        end
-    end
-    log("Failed to pull/craft " .. count .. "x " .. itemName .. " after retries")
-    return false
-end
-
--- Fulfill a single Builder request
-function fulfillRequest(meBridge, request)
-    -- Determine AE2 item name
-    local itemName = (request.items and request.items.name) or nameToAE2[request.name]
-    if not itemName then
-        log("Could not determine AE2 item for request: " .. request.name)
-        return false
-    end
-
-    -- Determine required count
-    local totalCount = (request.items and request.items.count) or request.count or 1
-
-    local ok = pullOrCraft(meBridge, itemName, totalCount)
-    if ok then
-        log("Successfully fulfilled request: " .. totalCount .. "x " .. itemName)
-    else
-        log("Could not fulfill request yet: " .. totalCount .. "x " .. itemName)
-    end
-    return ok
-end
-
--- Main loop
-while true do
-    local requests = colony.getRequests() or {}
-    log("Found " .. #requests .. " request(s) in Colony Integrator")
-
-    for i, req in ipairs(requests) do
-        -- Only handle Builder requests
-        if req.target and string.find(req.target, "Builder") then
-            -- Only handle PENDING or IN_PROGRESS requests
-            if req.state == "PENDING" or req.state == "IN_PROGRESS" then
-                local success = fulfillRequest(me, req)
-                if success then
-                    colony.completeRequest(req)
-                    log("Marked request completed for " .. req.target)
-                else
-                    log("Will retry request for " .. req.target .. " on next loop")
-                end
-            end
-        end
-        -- Non-builder requests are ignored silently
-    end
-
-    sleep(2)
-end
+        if
