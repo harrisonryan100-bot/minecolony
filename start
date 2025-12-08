@@ -1,143 +1,62 @@
-------------------------------------------------------------
--- AE2ColonyWarehouse (Updated for Builder’s Hut Export)
-------------------------------------------------------------
-
-local SCAN_INTERVAL  = 10
-local LOG_FILE       = "ae2colonywarehouse.log"
-local DEBUG          = true
-local DETAIL_TIMEOUT = 30
-local CRAFT_TIMEOUT  = 90
-local MAX_ATTEMPTS   = 3
-
-local SKIP_PATTERNS = { "Tool of class", "Hoe", "Shovel", "Axe", "Pickaxe", "Bow", "Sword" }
-
-local craftingTracker = {}
-
--- Debug print
-local function dprint(...)
-  if DEBUG then print("[DEBUG]", ...) end
-end
-
--- Log function
-local function log(msg)
-  print(msg)
-  if fs.exists(LOG_FILE) or fs.open(LOG_FILE, "w") then
-    local f = fs.open(LOG_FILE, "a")
-    f.writeLine(os.date("%H:%M:%S") .. " | " .. msg)
-    f.close()
-  end
-end
-
--- Peripheral setup
-local monitor = peripheral.find("monitor")
-monitor.setTextScale(0.5)
-monitor.clear()
-monitor.setBackgroundColor(colors.black)
-monitor.setTextColor(colors.white)
-
-local meBridge = peripheral.wrap("bottom")
-if not meBridge then error("No ME Bridge found on bottom") end
-
+-- Wrap peripherals
 local colony = peripheral.wrap("top")
-if not colony then error("No Colony Integrator found on top") end
+local meBridge = peripheral.wrap("bottom")
 
-------------------------------------------------------------
--- Helper Functions
-------------------------------------------------------------
-
-local function autoDetectOutputSide(itemStack)
-    local sides = {"top","bottom","left","right","front","back"}
-    for _, side in ipairs(sides) do
-        local ok, exported = pcall(function()
-            return meBridge.exportItem(itemStack, side)
-        end)
-        if ok and type(exported) == "number" and exported > 0 then
-            return side, exported
-        end
-    end
-    return nil, 0
+-- Check peripherals
+if not colony then
+    print("ERROR: Colony Integrator NOT found on top")
+    return
+end
+if not meBridge then
+    print("ERROR: ME Bridge NOT found on bottom")
+    return
 end
 
-local function exportToBuilder(itemName, count)
-    local stack = { name = itemName, count = count }
-    local side, exported = autoDetectOutputSide(stack)
-    if exported > 0 then
-        log("Exported " .. exported .. "x " .. itemName .. " to Builder's Hut")
-    else
-        log("Failed to export " .. itemName .. " (no valid output side)")
-    end
-    return exported
-end
+print("Colony Integrator detected on top")
+print("ME Bridge detected on bottom")
 
-local function craftIfNeeded(itemName, missing)
-    if type(meBridge.listCraftableItems) ~= "function" then
-        log("ME Bridge cannot list craftable items")
-        return false
-    end
-    local craftable = false
-    for _, item in ipairs(meBridge.listCraftableItems() or {}) do
-        if item.name == itemName then craftable = true break end
-    end
-    if craftable and type(meBridge.craftItem) == "function" then
-        local ok, result = pcall(meBridge.craftItem, meBridge, { name = itemName, count = missing })
-        if ok and result then
-            log("Requested crafting of " .. missing .. "x " .. itemName)
-            return true
-        else
-            log("Failed to request craft for " .. itemName .. ": " .. tostring(result))
-            return false
-        end
-    else
-        log(itemName .. " is not craftable in AE2")
-        return false
+-- Detect a valid export side
+local sides = {"top","bottom","left","right","front","back"}
+local exportSide = nil
+for _, side in ipairs(sides) do
+    local ok, err = pcall(function()
+        -- test with a dummy item; will fail silently if AE2 doesn't have it
+        meBridge.exportItem({name="minecraft:stone", count=1}, side)
+    end)
+    if ok then
+        exportSide = side
+        break
     end
 end
 
-local function fulfillBuilderRequest(req)
-    local itemName = req.items[1].name
-    local needed = req.count
-    local available = 0
-    if type(meBridge.listItems) == "function" then
-        for _, data in ipairs(meBridge.listItems() or {}) do
-            if data.name == itemName then
-                available = (data.count or 0)
-                break
-            end
-        end
-    end
-
-    if available >= needed then
-        return exportToBuilder(itemName, needed)
-    else
-        local exported = 0
-        if available > 0 then
-            exported = exportToBuilder(itemName, available)
-            needed = needed - exported
-        end
-        local crafted = craftIfNeeded(itemName, needed)
-        if crafted then
-            log("Will retry request for " .. itemName .. " next loop after crafting")
-        else
-            log("Could not fulfill request for " .. itemName)
-        end
-        return exported
-    end
+if not exportSide then
+    print("ERROR: No valid inventory found next to ME Bridge")
+    return
+else
+    print("Exporting items to side: "..exportSide)
 end
 
-------------------------------------------------------------
--- Main Loop: Builder's Hut Only
-------------------------------------------------------------
-
+-- Main loop: attempt to fulfill builder hut requests
 while true do
-    local requests = colony.getRequests()
-    if requests and #requests > 0 then
-        for _, req in ipairs(requests) do
-            if string.find(req.target, "Builder") then
-                fulfillBuilderRequest(req)
+    local requests = colony.getRequests() or {}
+    
+    for _, req in ipairs(requests) do
+        -- Only process builder huts
+        if req.target and req.target:match("Builder") and req.items and req.items[1] and req.items[1].name then
+            local itemName = req.items[1].name
+            local count = req.count or 1
+            
+            -- Attempt to export
+            local ok, exported = pcall(function()
+                return meBridge.exportItem({name=itemName, count=count}, exportSide)
+            end)
+            
+            if ok then
+                print(string.format("Attempted to export %d x %s to %s: success=%s", count, itemName, req.target, tostring(exported)))
+            else
+                print(string.format("Attempted to export %d x %s to %s: FAILED (%s)", count, itemName, req.target, tostring(exported)))
             end
         end
-    else
-        log("No Builder's Hut requests found.")
     end
-    sleep(SCAN_INTERVAL)
-end
+    
+    sleep(5) -- wait befor
