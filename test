@@ -1,14 +1,16 @@
--- Detect peripherals
-local colony_integrator = peripheral.wrap("top")
-if not colony_integrator then
-    error("No colony integrator found on top")
+local function deepcopy(obj)
+    if type(obj) ~= "table" then return obj end
+    local res = {}
+    for k,v in pairs(obj) do res[k] = deepcopy(v) end
+    return res
 end
 
-local me_bridge = peripheral.wrap("bottom")
-if not me_bridge then
-    error("No ME Bridge found on bottom")
+-- Before logging:
+local safeRequests = {}
+for _, req in ipairs(allRequests) do
+    table.insert(safeRequests, deepcopy(req))
 end
 
--- Test: print requests
-local requests = colony_integrator.getRequests()
-print(textutils.serialize(requests))
+local f = fs.open(LOG_FILE, "w")
+f.write(textutils.serializeJSON(safeRequests, true))
+f.close()
