@@ -27,6 +27,20 @@ local function isCraftable(name)
   return ok and result or false
 end
 
+-- Request autocrafting safely
+local function requestCraft(name, count)
+  local ok, result = pcall(function()
+    return me.craftItem({name=name, count=count})
+  end)
+  if ok and result then
+    log("🛠 Requested autocraft of " .. count .. "x " .. name)
+    return true
+  else
+    log("❌ Failed to request autocraft of " .. count .. "x " .. name .. " (no pattern?)")
+    return false
+  end
+end
+
 -- Push requested items into the adjacent inventory
 local function pushItem(name, quota)
   local available = getItemCount(name)
@@ -38,8 +52,9 @@ local function pushItem(name, quota)
   end
 
   if isCraftable(name) then
-    me.craftItem({name=name, count=(quota - available)})
-    log("⏳ Queued craft for " .. (quota - available) .. "x " .. name)
+    if requestCraft(name, quota - available) then
+      log("⏳ Queued craft for " .. (quota - available) .. "x " .. name)
+    end
   else
     log("⚠ Skipping " .. name .. " (not craftable, only " .. available .. " in AE2)")
   end
