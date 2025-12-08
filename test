@@ -1,41 +1,78 @@
--- Wrap peripherals
-local colony_integrator = peripheral.wrap("top")  -- integrator on top
-local me_bridge        = peripheral.wrap("bottom") -- ME Bridge on bottom
-local chest            = peripheral.wrap("back")   -- chest on back
+--------------------
+-- USER SETTINGS
+--------------------
+local SCAN_INTERVAL = 10 -- seconds between scans
 
-if not colony_integrator then error("No Colony Integrator found on top!") end
-if not me_bridge then error("No ME Bridge found on bottom!") end
-if not chest then error("No chest found on back!") end
-
--- Helper function: export items from ME Bridge to chest
-local function exportItemToChest(itemName, count)
-    local stack = { name = itemName, count = count }
-    local sides = {"top","bottom","left","right","front","back"} -- just in case
-
-    -- Attempt export to chest
-    local exported = 0
-    for _, side in ipairs(sides) do
-        local ok, result = pcall(function()
-            return me_bridge.exportItem(stack, side)
-        end)
-        if ok and result > 0 then
-            exported = exported + result
-        end
-    end
-
-    if exported > 0 then
-        print("Exported " .. exported .. "x " .. itemName .. " to chest.")
-    else
-        print("Failed to export " .. itemName)
-    end
-
-    return exported
+--------------------
+-- PERIPHERAL SETUP
+--------------------
+local monitor = peripheral.find("monitor")
+if monitor then
+    monitor.clear()
+    monitor.setTextColor(colors.white)
+    monitor.setBackgroundColor(colors.black)
 end
 
--- Example: scan requests from integrator and export
-local requests = colony_integrator.getRequests()
-for _, req in ipairs(requests) do
-    local itemName = req.items[1].name
-    local itemCount = req.count
-    exportItemToChest(itemName, itemCount)
+local colony_integrator = peripheral.wrap("top")
+if not colony_integrator then error("No Colony Integrator found on top") end
+
+local me_bridge = peripheral.wrap("bottom")
+if not me_bridge then error("No ME Bridge found on bottom") end
+
+local chest = peripheral.find("minecraft:chest") or peripheral.find("minecraft:barrel")
+if not chest then error("No chest or barrel found") end
+
+--------------------
+-- HELPER FUNCTIONS
+--------------------
+local function dprint(...)
+    print("[DEBUG]", ...)
+end
+
+local function safeExportItemToChest(itemName, count)
+    local itemStack = { name = itemName, count = count }
+    local sides = {"top","bottom","left","right","front","back"}
+    for _, side in ipairs(sides) do
+        local ok, exported = pcall(function()
+            return me_bridge.exportItem(itemStack, side)
+        end)
+        if ok and exported > 0 then
+            dprint("Exported " .. exported .. " of " .. itemName .. " to side " .. side)
+            return exported
+        end
+    end
+    dprint("Failed to export " .. itemName .. ": no valid output found")
+    return 0
+end
+
+local function exportItemToChest(itemName, count)
+    -- push items into adjacent chest
+    local remaining = count
+    for slot=1,chest.size() do
+        if remaining <= 0 then break end
+        local item = chest.getItemDetail(slot)
+        if not item or item.name == itemName then
+            local moved = me_bridge.exportItem({name=itemName, count=remaining}, "bottom")
+            remaining = remaining - moved
+        end
+    end
+    if remaining > 0 then
+        dprint("Could not fully export " .. remaining .. " of " .. itemName)
+    end
+end
+
+--------------------
+-- MAIN LOOP
+--------------------
+while true do
+    local requests = colony_integrator.getRequests()
+    for _, req in ipairs(requests) do
+        if req.target == "Builder Ezra P. Barrett" then
+            local itemName = req.items[1].name
+            local itemCount = req.count
+            dprint("Processing request:", itemName, "x" .. itemCount)
+            exportItemToChest(itemName, itemCount)
+        end
+    end
+    sleep(SCAN_INTERVAL)
 end
