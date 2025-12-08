@@ -6,21 +6,11 @@ local SCAN_INTERVAL = 10 -- seconds between scans
 --------------------
 -- PERIPHERAL SETUP
 --------------------
-local monitor = peripheral.find("monitor")
-if monitor then
-    monitor.clear()
-    monitor.setTextColor(colors.white)
-    monitor.setBackgroundColor(colors.black)
-end
-
 local colony_integrator = peripheral.wrap("top")
 if not colony_integrator then error("No Colony Integrator found on top") end
 
 local me_bridge = peripheral.wrap("bottom")
 if not me_bridge then error("No ME Bridge found on bottom") end
-
-local chest = peripheral.find("minecraft:chest") or peripheral.find("minecraft:barrel")
-if not chest then error("No chest or barrel found") end
 
 --------------------
 -- HELPER FUNCTIONS
@@ -29,36 +19,21 @@ local function dprint(...)
     print("[DEBUG]", ...)
 end
 
-local function safeExportItemToChest(itemName, count)
-    local itemStack = { name = itemName, count = count }
+-- Use the working export method
+local function exportItem(itemName, count)
+    local stack = { name = itemName, count = count }
     local sides = {"top","bottom","left","right","front","back"}
     for _, side in ipairs(sides) do
         local ok, exported = pcall(function()
-            return me_bridge.exportItem(itemStack, side)
+            return me_bridge.exportItem(stack, side)
         end)
         if ok and exported > 0 then
             dprint("Exported " .. exported .. " of " .. itemName .. " to side " .. side)
             return exported
         end
     end
-    dprint("Failed to export " .. itemName .. ": no valid output found")
+    dprint("Failed to export " .. itemName)
     return 0
-end
-
-local function exportItemToChest(itemName, count)
-    -- push items into adjacent chest
-    local remaining = count
-    for slot=1,chest.size() do
-        if remaining <= 0 then break end
-        local item = chest.getItemDetail(slot)
-        if not item or item.name == itemName then
-            local moved = me_bridge.exportItem({name=itemName, count=remaining}, "bottom")
-            remaining = remaining - moved
-        end
-    end
-    if remaining > 0 then
-        dprint("Could not fully export " .. remaining .. " of " .. itemName)
-    end
 end
 
 --------------------
@@ -71,7 +46,7 @@ while true do
             local itemName = req.items[1].name
             local itemCount = req.count
             dprint("Processing request:", itemName, "x" .. itemCount)
-            exportItemToChest(itemName, itemCount)
+            exportItem(itemName, itemCount)
         end
     end
     sleep(SCAN_INTERVAL)
