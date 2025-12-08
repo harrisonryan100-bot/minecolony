@@ -1,23 +1,88 @@
--- Wrap ME Bridge
-local me = peripheral.wrap("bottom") -- change side if needed
-print("Methods on ME Bridge:")
-local count = 0
-for k,v in pairs(me) do
-    count = count + 1
-    print(k, type(v))
-    if count >= 10 then break end -- limit output
+-- CONFIG
+local colonySide = "top"
+local chestSides = {"top","bottom","left","right","front","back"} -- try all sides
+local SCAN_INTERVAL = 10
+local DEBUG = true
+
+-- WRAPPERS
+local colony = peripheral.wrap(colonySide)
+if not colony then error("No colony integrator found on side " .. colonySide) end
+
+-- Logging
+local function dprint(...)
+    if DEBUG then print(...) end
 end
 
--- Test listItems
-if type(me.listItems) == "function" then
-    print("Items in AE2 (up to 8 shown):")
-    local items = me.listItems()
-    local shown = 0
-    for i,data in ipairs(items) do
-        print(data.count, data.name)
-        shown = shown + 1
-        if shown >= 8 then break end
+-- Detect chest to push items
+local function findChest()
+    for _, side in ipairs(chestSides) do
+        local ok, chest = pcall(peripheral.wrap, side)
+        if ok and chest and type(chest.pushItem) == "function" then
+            dprint("Chest detected on side: " .. side)
+            return chest
+        end
     end
-else
-    print("listItems() not available")
+    return nil
+end
+
+local chest = findChest()
+if not chest then error("No chest with pushItem detected!") end
+
+-- Check AE2 storage
+local function getItemCount(itemName)
+    local total = 0
+    local ok, storage = pcall(colony.getUsedItemStorage)
+    if ok and storage then
+        for _, item in ipairs(storage) do
+            if item.name == itemName then
+                total = total + (item.count or 0)
+            end
+        end
+    end
+    return total
+end
+
+-- Push item to chest
+local function exportToChest(itemName, count)
+    local stack = { name = itemName, count = count }
+    local pushed = chest.pushItem(stack) or 0
+    dprint(string.format("Attempted to export %d x %s: success=%d", count, itemName, pushed))
+    return pushed
+end
+
+-- Process colony requests
+local function processRequests()
+    local requests = colony.getRequests()
+    if not requests then
+        dprint("No requests returned from colony.")
+        return
+    end
+
+    for _, req in ipairs(requests) do
+        local target = req.target
+        local reqCount = req.count or 1
+        local itemName = req.items[1] and req.items[1].name
+        if not itemName then
+            dprint("Skipping request: cannot determine AE2 item for " .. req.name)
+        else
+            local available = getItemCount(itemName)
+            if available <= 0 then
+                dprint(string.format("Not enough %s in AE2, request for %d", itemName, reqCount))
+            else
+                local toExport = math.min(reqCount, available)
+                local success = exportToChest(itemName, toExport)
+                if success > 0 then
+                    dprint(string.format("%d x %s sent to %s", success, itemName, target))
+                else
+                    dprint(string.format("Failed to send %s to %s", itemName, target))
+                end
+            end
+        end
+    end
+end
+
+-- MAIN LOOP
+while true do
+    processRequests()
+    sleep(SCAN_INTERVAL)
 end
