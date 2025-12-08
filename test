@@ -1,9 +1,3 @@
-local sides = {"top","bottom","left","right","front","back"}
-for _, side in ipairs(sides) do
-    local ok, pType = pcall(peripheral.getType, side)
-    if ok and pType then
-        print(side, "detected type:", pType)
-    else
-        print(side, "nothing detected")
-    end
+for _, side in ipairs({"top","bottom","left","right","front","back"}) do
+    print(side, peripheral.getType(side))
 end
