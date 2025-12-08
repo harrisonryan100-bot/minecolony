@@ -1,0 +1,65 @@
+local colony=peripheral.wrap("top")
+local me=peripheral.wrap("bottom")
+local TARGET_SIDE="right"
+
+local netherite={["minecraft:netherite_pickaxe"]=true,["minecraft:netherite_axe"]=true,
+["minecraft:netherite_shovel"]=true,["minecraft:netherite_hoe"]=true,["minecraft:netherite_sword"]=true}
+
+local function isBuilderTarget(t)
+  for k,v in pairs(t or {}) do
+    if type(v)=="string" and v:lower():find("builder") then return true end
+  end
+  return false
+end
+
+local function normItem(it)
+  local id = it.name or it.id or (it.item and it.item.name)
+  local cnt = it.count or it.needed or 1
+  return id, cnt
+end
+
+local function getCount(id)
+  local total=0
+  for _,x in ipairs(me.getItems() or {}) do
+    if x.name==id then total=total+(x.count or 0) end
+  end
+  return total
+end
+
+local function push(id,cnt)
+  local have=getCount(id)
+  if have>=cnt then
+    local ok=me.exportItem({name=id,count=cnt},TARGET_SIDE)
+    print("✔ "..cnt.."x "..id.." exported:"..tostring(ok))
+    return ok
+  else
+    print("⚠ stock "..id.." "..have.."/"..cnt)
+    return false
+  end
+end
+
+while true do
+  local ok,reqs=pcall(function() return colony.getRequests() end)
+  if not ok then print("getRequests() error") sleep(10) else
+    print("Total requests: "..#reqs)
+    local handled,removed=0,0
+    for _,r in ipairs(reqs) do
+      if isBuilderTarget(r.target) then
+        for _,it in ipairs(r.items or {}) do
+          local id,cnt=normItem(it)
+          if id then
+            local isTool = id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword")
+            if isTool and not netherite[id] then
+              print("🗑 skipped non-Netherite: "..id)
+              removed=removed+1
+            else
+              if push(id,cnt) then handled=handled+1 end
+            end
+          end
+        end
+      end
+    end
+    print("Loop complete: handled "..handled.." items, removed "..removed)
+  end
+  sleep(10)
+end
