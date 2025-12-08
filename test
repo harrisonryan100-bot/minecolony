@@ -1,102 +1,86 @@
 --------------------
--- BUILDER HUT AUTOMATION (5-block range from computer)
+-- CONFIG
 --------------------
-local SCAN_INTERVAL = 10  -- seconds between idle scans
-local CHEST_SIDE = "left" -- adjust to where your chest is
-local MAX_DISTANCE = 5    -- blocks from computer to consider
+local SCAN_INTERVAL = 10 -- seconds between scans when nothing is pending
+local EXPORT_SIDE = "left" -- side where the chest is connected
+local RANGE = 5 -- blocks from computer to Builders Huts
+
+-- Top = colony integrator, Bottom = ME Bridge
 local colony_integrator = peripheral.wrap("top")
 local me_bridge = peripheral.wrap("bottom")
-local DEBUG = true
+local chest = peripheral.wrap(EXPORT_SIDE)
 
-local function dprint(...)
-    if DEBUG then print("[DEBUG]", ...) end
+if not colony_integrator then error("Colony Integrator not found on top") end
+if not me_bridge then error("ME Bridge not found on bottom") end
+if not chest then error("No chest/barrel found on " .. EXPORT_SIDE) end
+
+--------------------
+-- HELPERS
+--------------------
+local function normalizeName(name)
+    local clean = name:match("([^:]+:[^:]+)")
+    if clean then return clean else return name end
 end
 
--- Get all items from AE2
+local function getNearbyBuilders()
+    local huts = colony_integrator.getBuildings("buildersHut") or {}
+    local nearby = {}
+    local cx, cy, cz = table.unpack({gps.locate()}) -- get computer position
+    for _, hut in ipairs(huts) do
+        local hx, hy, hz = hut:getPosition()
+        local dx, dy, dz = math.abs(cx - hx), math.abs(cy - hy), math.abs(cz - hz)
+        if dx <= RANGE and dy <= RANGE and dz <= RANGE then
+            table.insert(nearby, hut)
+        end
+    end
+    return nearby
+end
+
+local function getRequestsForHut(hut)
+    local requests = colony_integrator.getRequests(hut) or {}
+    return requests
+end
+
 local function getAEItems()
-    if type(me_bridge.listItems) ~= "function" then
-        dprint("me_bridge.listItems not available!")
-        return {}
-    end
-    local ok, items = pcall(me_bridge.listItems, me_bridge)
-    if not ok then
-        dprint("Failed to list AE2 items: ", items)
-        return {}
-    end
+    local items = me_bridge.listItems() or {}
     local aeItems = {}
-    for _, i in ipairs(items or {}) do
-        aeItems[i.name] = i.count or 0
+    for _, i in ipairs(items) do
+        local n = normalizeName(i.name)
+        aeItems[n] = (aeItems[n] or 0) + (i.count or 0)
     end
     return aeItems
 end
 
--- Export a stack to a chest
-local function exportToChest(itemName, count)
-    if not count or count <= 0 then return 0 end
-    local ok, moved = pcall(me_bridge.exportItem, me_bridge, {name=itemName, count=count}, CHEST_SIDE)
-    if ok and type(moved) == "number" then
-        dprint("Exported "..moved.."x "..itemName.." to chest")
-        return moved
-    else
-        dprint("Failed to export "..itemName.." count "..count)
-        return 0
-    end
+local function exportItemToChest(itemName, count)
+    local pushed = chest.pullItems(me_bridge, itemName, count) -- pull from ME Bridge to chest
+    return pushed or 0
 end
 
--- Filter Builder Hut requests by distance from computer
-local function getNearbyBuilderRequests()
-    local allRequests = colony_integrator.getRequests() or {}
-    local nearbyRequests = {}
+--------------------
+-- MAIN LOOP
+--------------------
+while true do
+    local aeItems = getAEItems()
+    local builders = getNearbyBuilders()
+    local pending = false
 
-    local computerPos = {x=0, y=0, z=0}  -- assume computer is origin
-
-    for _, r in ipairs(allRequests) do
-        if r.target and string.find(r.target, "Builder") then
-            local bPos = r.buildingPosition or {x=0, y=0, z=0} -- fallback if API doesn't provide
-            local dx = bPos.x - computerPos.x
-            local dy = bPos.y - computerPos.y
-            local dz = bPos.z - computerPos.z
-            local dist = math.sqrt(dx*dx + dy*dy + dz*dz)
-            if dist <= MAX_DISTANCE then
-                table.insert(nearbyRequests, r)
+    for _, hut in ipairs(builders) do
+        local requests = getRequestsForHut(hut)
+        for _, req in ipairs(requests) do
+            local item = normalizeName(req.items[1].name)
+            local needed = req.count
+            local available = aeItems[item] or 0
+            if available > 0 then
+                local toExport = math.min(available, needed)
+                local exported = exportItemToChest(item, toExport)
+                print(string.format("Exported %d of %s to chest for %s", exported, item, hut:getOwnerName()))
+                aeItems[item] = available - exported
+                pending = true
             end
         end
     end
 
-    return nearbyRequests
-end
-
--- Process requests one at a time
-local function processRequests()
-    local aeItems = getAEItems()
-    local requests = getNearbyBuilderRequests()
-
-    if #requests == 0 then
-        dprint("No nearby builder requests found.")
-        return false
-    end
-
-    for _, req in ipairs(requests) do
-        local itemName = req.items[1].name
-        local needed = req.count
-        local available = aeItems[itemName] or 0
-        local toExport = math.min(needed, available)
-        if toExport > 0 then
-            local moved = exportToChest(itemName, toExport)
-            dprint(string.format("Request for %d x %s, moved %d", needed, itemName, moved))
-        else
-            dprint("Item "..itemName.." not available in AE2 storage")
-        end
-    end
-    return true
-end
-
--- Main loop
-while true do
-    local hasRequests = processRequests()
-    if hasRequests then
-        sleep(1)  -- quick loop if processing requests
-    else
-        sleep(SCAN_INTERVAL)  -- wait longer if no requests
+    if not pending then
+        sleep(SCAN_INTERVAL)
     end
 end
