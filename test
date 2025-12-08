@@ -5,92 +5,177 @@ if not colony then error("No Colony Integrator detected on TOP") end
 local me = peripheral.wrap("bottom")
 if not me then error("No ME Bridge detected on BOTTOM") end
 
-local TARGET_SIDE = "right"
+local TARGET_SIDE = "right"   -- adjust as needed: "top", "bottom", "left", etc.
 
 local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
 
+-- Safe ME call wrapper: name is the method string on the ME bridge, args are passed positionally
+local function meSafe(name, ...)
+  local ok, res = pcall(function() return me[name](...) end)
+  if not ok then
+    log("⚠ ME." .. name .. " error: " .. tostring(res))
+    return nil
+  end
+  return res
+end
+
 -- AE2 helpers
-local function getItemCount(name)
-  local items = me.getItems() or {}
+local function getItemCount(id)
+  local items = meSafe("getItems") or {}
   local total = 0
   for _, it in pairs(items) do
-    if it.name == name then total = total + (it.count or 0) end
+    if it and it.name == id then
+      total = total + (it.count or 0)
+    end
   end
   return total
 end
 
-local function isCraftable(name)
-  local ok, result = pcall(function() return me.isCraftable({name=name}) end)
-  return ok and result or false
+local function isCraftable(id)
+  local res = meSafe("isCraftable", { name = id })
+  return res == true
 end
 
-local function requestCraft(name, count)
-  if not isCraftable(name) then
-    log("⚠ Skipping uncraftable item: " .. name)
+-- Craft throttling
+local MIN_CRAFT_DELAY = 1.0   -- seconds between craft requests
+local MAX_CRAFTS_PER_LOOP = 6 -- cap crafts per loop to avoid CPU spam
+local lastCraftTime = 0
+local craftsThisLoop = 0
+
+local function requestCraft(id, count)
+  if count <= 0 then return true end
+
+  -- throttle per craft
+  local now = os.clock()
+  local since = now - lastCraftTime
+  if since < MIN_CRAFT_DELAY then
+    sleep(MIN_CRAFT_DELAY - since)
+  end
+
+  if craftsThisLoop >= MAX_CRAFTS_PER_LOOP then
+    log("⏸ Craft cap reached this loop, skipping: " .. id .. " x" .. count)
     return false
   end
-  local ok, result = pcall(function()
-    return me.craftItem({name=name, count=count})
-  end)
-  if ok and result then
-    log("🛠 Craft queued: " .. count .. "x " .. name)
+
+  if not isCraftable(id) then
+    log("⚠ Uncraftable: " .. id .. " (pattern missing)")
+    return false
+  end
+
+  local result = meSafe("craftItem", { name = id, count = count })
+  if result then
+    lastCraftTime = os.clock()
+    craftsThisLoop = craftsThisLoop + 1
+    log("🛠 Craft queued: " .. count .. "x " .. id)
     return true
   else
-    log("❌ craftItem failed for " .. name)
+    log("❌ craftItem returned nil for " .. id)
     return false
   end
 end
 
-local function pushItem(name, quota)
-  local available = getItemCount(name)
-  if available >= quota then
-    local ok = me.exportItem({name=name, count=quota}, TARGET_SIDE)
-    log((ok and "✔ Pushed " or "✖ Failed ") .. quota .. "x " .. name .. " to " .. TARGET_SIDE)
-    return
-  end
-  if requestCraft(name, quota - available) then
-    log("⏳ Queued craft for " .. (quota - available) .. "x " .. name)
+local function exportItem(id, count)
+  local ok = meSafe("exportItem", { name = id, count = count }, TARGET_SIDE)
+  if ok then
+    log("✔ Exported " .. count .. "x " .. id .. " to " .. TARGET_SIDE)
+    return true
   else
-    log("⚠ Could not queue craft for " .. name)
+    log("✖ Export failed for " .. id .. " (" .. count .. ")")
+    return false
   end
 end
 
--- Main loop: colony + builder huts
-while true do
-  local handled = 0
-  local seen = {}
+-- Push logic: export if available; otherwise safely queue craft
+local function pushItem(id, quota)
+  local available = getItemCount(id)
 
-  -- Colony-wide requests
-  local requests = colony.getRequests() or {}
-  for _, req in ipairs(requests) do
-    for _, item in ipairs(req.items or {}) do
-      local id = item.name
-      if id and not seen[id] then
-        local quota = (item.maxCount and item.maxCount == 1) and 4 or 64
-        pushItem(id, quota)
-        seen[id] = true
-        handled = handled + 1
-      end
-    end
+  if available >= quota then
+    exportItem(id, quota)
+    return
   end
 
-  -- Builder hut-specific requests
-  local buildings = colony.getBuildings() or {}
-  for _, b in ipairs(buildings) do
-    if b.type == "builder" then
-      local hutRequests = colony.getBuilderResources(b.location) or {}
-      for _, item in ipairs(hutRequests) do
-        local id = item.item and item.item.name
+  local needed = quota - available
+  if needed > 0 then
+    if requestCraft(id, needed) then
+      log("⏳ Craft queued to reach quota: " .. needed .. "x " .. id)
+    else
+      log("⚠ Could not queue craft for " .. id)
+    end
+  end
+end
+
+-- Safe colony calls (wrapped individually to avoid breaking main loop)
+local function safeGetRequests()
+  local ok, res = pcall(function() return colony.getRequests() end)
+  if not ok then
+    log("⚠ colony.getRequests error: " .. tostring(res))
+    return {}
+  end
+  return res or {}
+end
+
+local function safeGetBuildings()
+  local ok, res = pcall(function() return colony.getBuildings() end)
+  if not ok then
+    log("⚠ colony.getBuildings error: " .. tostring(res))
+    return {}
+  end
+  return res or {}
+end
+
+local function safeGetBuilderResources(loc)
+  local ok, res = pcall(function() return colony.getBuilderResources(loc) end)
+  if not ok then
+    log("⚠ colony.getBuilderResources error: " .. tostring(res))
+    return {}
+  end
+  return res or {}
+end
+
+-- Main loop with xpcall guard
+while true do
+  local ok, err = xpcall(function()
+    craftsThisLoop = 0
+
+    local handled = 0
+    local seen = {}
+
+    -- Colony-wide requests
+    for _, req in ipairs(safeGetRequests()) do
+      for _, item in ipairs(req.items or {}) do
+        local id = item.name
         if id and not seen[id] then
-          local quota = item.needed or 1
+          local quota = (item.maxCount and item.maxCount == 1) and 4 or 64
           pushItem(id, quota)
           seen[id] = true
           handled = handled + 1
         end
       end
     end
+
+    -- Builder hut-specific requests
+    for _, b in ipairs(safeGetBuildings()) do
+      if b.type == "builder" then
+        for _, it in ipairs(safeGetBuilderResources(b.location)) do
+          local id = it.item and it.item.name
+          if id and not seen[id] then
+            local quota = it.needed or 1
+            pushItem(id, quota)
+            seen[id] = true
+            handled = handled + 1
+          end
+        end
+      end
+    end
+
+    log("Loop complete, handled " .. handled .. " unique items")
+  end, function(e)
+    return debug and debug.traceback and debug.traceback(e) or tostring(e)
+  end)
+
+  if not ok then
+    log("🔥 Top-level loop error recovered:\n" .. tostring(err))
   end
 
-  log("Loop complete, handled " .. handled .. " unique items")
   sleep(5)
 end
