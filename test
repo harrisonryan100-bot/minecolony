@@ -1,4 +1,64 @@
-for _, side in ipairs({"top","bottom","left","right","front","back"}) do
-    local pType = peripheral.getType(side)
-    print(side, pType or "none")
+-- Wrap peripherals
+local colony_integrator = peripheral.wrap("top")
+local me_bridge = peripheral.wrap("bottom")
+
+if not colony_integrator then
+    error("No colony_integrator found on top")
+end
+if not me_bridge then
+    error("No me_bridge found on bottom")
+end
+
+-- Detect adjacent inventory (chest/barrel)
+local sides = {"top","bottom","left","right","front","back"}
+local output_side
+for _, side in ipairs(sides) do
+    if peripheral.getType(side) == "minecraft:chest" or peripheral.getType(side) == "minecraft:barrel" then
+        output_side = side
+        print("Found output inventory on side:", side)
+        break
+    end
+end
+if not output_side then error("No chest or barrel detected nearby!") end
+
+-- Helper to safely export items
+local function exportItem(stack)
+    local success, count = pcall(function()
+        return me_bridge.exportItem(stack, output_side)
+    end)
+    if success then
+        print("Exported", count, stack.name)
+    else
+        print("Failed to export", stack.name, count)
+    end
+end
+
+-- Main loop
+while true do
+    local requests = colony_integrator.getRequests()
+    if requests then
+        for _, req in ipairs(requests) do
+            if req.target == "Builder Ezra P. Barrett" then
+                local itemName = req.items[1].name
+                local needed = req.count
+                local aeItems = me_bridge.listItems() or {}
+                local available = 0
+                for _, data in ipairs(aeItems) do
+                    if data.name == itemName then
+                        available = data.count or 0
+                        break
+                    end
+                end
+                local toExport = math.min(available, needed)
+                if toExport > 0 then
+                    exportItem({name=itemName, count=toExport})
+                else
+                    print("Not enough", itemName, "in storage")
+                end
+            end
+        end
+    else
+        print("No requests found")
+    end
+    sleep(10) -- wait 10 seconds before next scan
 end
