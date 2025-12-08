@@ -1,91 +1,60 @@
 -- Wrap peripherals
-local integrator = peripheral.wrap("top")   -- Colony Integrator
-local me_bridge  = peripheral.wrap("bottom") -- AE2 Bridge
-local chest      = peripheral.wrap("back")  -- Output chest
+local integrator = peripheral.wrap("top")
+local me_bridge  = peripheral.wrap("bottom")
+local chest      = peripheral.wrap("back")
 
-if not integrator then error("No Colony Integrator found on top!") end
-if not me_bridge  then error("No ME Bridge found on bottom!") end
-if not chest      then error("No chest found on back!") end
+if not integrator then error("No Colony Integrator on top") end
+if not me_bridge  then error("No ME Bridge on bottom") end
+if not chest      then error("No chest on back") end
 
-local BUILDER_NAME = "Ezra"  -- Only fulfill requests for this builder
-local SLEEP_TIME   = 10      -- seconds between cycles
+-- Ezra's hut coordinates (example: x=100, y=64, z=200)
+local EZRA_HUT_POS = {x=100, y=64, z=200}
+local SLEEP_TIME = 10
 
--- Export a specific quantity of an item to chest
+-- Helper: compare two positions
+local function samePos(a, b)
+    return a.x == b.x and a.y == b.y and a.z == b.z
+end
+
+-- Export items from AE2 to chest
 local function exportItem(itemName, count)
     local ok, exported = pcall(function()
         return me_bridge.exportItem({name=itemName, count=count}, "back")
     end)
-    if not ok then
-        print("Error exporting " .. itemName .. ": " .. tostring(exported))
-        return 0
-    end
-    return exported or 0
+    return (ok and exported) or 0
 end
 
--- Return items in chest that are not requested by Ezra
-local function returnUnrequestedItems(requestedItems)
-    local ok, chestList = pcall(function()
-        return chest.list()
-    end)
-    if not ok or not chestList then return end
-
-    for slot, item in pairs(chestList) do
-        local name = item.name
-        if not requestedItems[name] then
-            local ok2, returned = pcall(function()
-                return me_bridge.exportItem({name=name, count=item.count}, "bottom")
-            end)
-            if ok2 then
-                print("Returned " .. returned .. "x " .. name .. " to AE2")
-            end
-        end
-    end
-end
-
--- Main loop in a function to avoid 'goto' issues
-local function processRequests()
-    local ok, allRequests = pcall(function()
-        return integrator.getRequests()
-    end)
-    if not ok or not allRequests then
-        print("Failed to get requests from integrator")
-        return
-    end
-
-    -- Build a table of requested items for Ezra
-    local ezraRequests = {}
-    for _, req in ipairs(allRequests) do
-        if req.target == BUILDER_NAME then
-            for _, item in ipairs(req.items) do
-                ezraRequests[item.name] = (ezraRequests[item.name] or 0) + req.count
-            end
-        end
-    end
-
-    if next(ezraRequests) == nil then
-        print("No requests for " .. BUILDER_NAME .. "; waiting " .. SLEEP_TIME .. "s")
-        return
-    end
-
-    -- Fulfill each request
-    for itemName, count in pairs(ezraRequests) do
-        local exported = exportItem(itemName, count)
-        if exported > 0 then
-            pcall(function()
-                integrator.fulfillRequest(BUILDER_NAME, itemName, exported)
-            end)
-            print("Fulfilled " .. exported .. "x " .. itemName .. " for " .. BUILDER_NAME)
-        else
-            print("Could not export " .. itemName)
-        end
-    end
-
-    -- Return any unrelated items in chest
-    returnUnrequestedItems(ezraRequests)
-end
-
--- Loop forever
+-- Main loop
 while true do
-    processRequests()
-    sleep(SLEEP_TIME)
+    local ok, allRequests = pcall(function() return integrator.getRequests() end)
+    if not ok or not allRequests then
+        print("Failed to read requests")
+        sleep(SLEEP_TIME)
+    else
+        local ezraRequests = {}
+        for _, req in ipairs(allRequests) do
+            if req.location and samePos(req.location, EZRA_HUT_POS) then
+                for _, item in ipairs(req.items) do
+                    ezraRequests[item.name] = (ezraRequests[item.name] or 0) + req.count
+                end
+            end
+        end
+
+        if next(ezraRequests) == nil then
+            print("No requests for Ezra's hut; waiting " .. SLEEP_TIME .. "s")
+        else
+            for itemName, count in pairs(ezraRequests) do
+                local exported = exportItem(itemName, count)
+                if exported > 0 then
+                    pcall(function()
+                        integrator.fulfillRequest("Builder's Hut", itemName, exported)
+                    end)
+                    print("Fulfilled " .. exported .. "x " .. itemName)
+                else
+                    print("Could not export " .. itemName)
+                end
+            end
+        end
+        sleep(SLEEP_TIME)
+    end
 end
