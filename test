@@ -1,14 +1,7 @@
--- Colony Integrator on TOP, ME Bridge on BOTTOM, Chest/Barrel on RIGHT
 local colony = peripheral.wrap("top")
 local me = peripheral.wrap("bottom")
 local TARGET_SIDE = "right"
 
-local function log(msg) print(os.date("%H:%M:%S").." | "..msg) end
-
--- Ezra's hut location (hard-coded)
-local ezraHut = { x = 31, y = 64, z = -45, dimension = "minecraft:overworld" }
-
--- Netherite tool whitelist
 local netheriteTools = {
   ["minecraft:netherite_pickaxe"]=true, ["minecraft:netherite_axe"]=true,
   ["minecraft:netherite_shovel"]=true, ["minecraft:netherite_hoe"]=true,
@@ -16,46 +9,34 @@ local netheriteTools = {
 }
 local function isNetheriteTool(id) return netheriteTools[id] end
 
--- Safe wrappers
-local function meSafe(name, arg1, arg2)
-  local ok,res = pcall(function() return me[name](arg1,arg2) end)
-  return ok and res or nil
-end
-local function safeGetBuilderResources(loc)
-  local ok,res = pcall(function() return colony.getBuilderResources(loc) end)
+local function safeGetRequests()
+  local ok,res = pcall(function() return colony.getRequests() end)
   return ok and res or {}
 end
 
--- Push logic
-local function pushItem(id, quota)
-  local items = meSafe("getItems") or {}
-  local count = 0
-  for _,it in ipairs(items) do if it.name==id then count=count+(it.count or 0) end end
-  if count >= quota then
-    meSafe("exportItem",{name=id,count=quota},TARGET_SIDE)
-    log("✔ Exported "..quota.."x "..id)
-  else
-    log("⚠ Missing "..id.." ("..count.."/"..quota..")")
-  end
-end
-
--- Main loop: Ezra’s hut only
 while true do
-  local resources = safeGetBuilderResources(ezraHut)
-  log("Ezra resources: "..#resources)
-  for _,res in ipairs(resources) do
-    local id = res.item and res.item.name
-    if id then
-      if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
-        if not isNetheriteTool(id) then
-          log("🗑 Skipped non-Netherite tool: "..id)
-        else
-          pushItem(id,res.needed or 1)
+  local reqs = safeGetRequests()
+  print("Total colony requests: "..#reqs)
+  for _,r in ipairs(reqs) do
+    local tgt = r.target or {}
+    local tname = tgt.name or (tgt.type or "unknown")
+    if tname:lower():find("builder") then
+      print("Builder request from "..tname)
+      for _,it in ipairs(r.items or {}) do
+        local id = it.name
+        if id then
+          if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
+            if not isNetheriteTool(id) then
+              print("  skipped non-Netherite: "..id)
+            else
+              print("  "..it.count.."x "..id.." (Netherite OK)")
+            end
+          else
+            print("  "..it.count.."x "..id)
+          end
         end
-      else
-        pushItem(id,res.needed or 1)
       end
     end
   end
-  sleep(5)
+  sleep(10)
 end
