@@ -27,18 +27,28 @@ local function isCraftable(name)
   return ok and result or false
 end
 
--- Request autocrafting safely
+-- Request autocrafting with job tracking
 local function requestCraft(name, count)
-  local ok, result = pcall(function()
+  local ok, job = pcall(function()
     return me.craftItem({name=name, count=count})
   end)
-  if ok and result then
-    log("🛠 Requested autocraft of " .. count .. "x " .. name)
-    return true
-  else
-    log("❌ Failed to request autocraft of " .. count .. "x " .. name .. " (no pattern?)")
+
+  if not ok or not job then
+    log("❌ Failed to start craft for " .. count .. "x " .. name)
     return false
   end
+
+  -- monitor jobs until accepted
+  local jobs = me.getCraftingJobs() or {}
+  for _, j in pairs(jobs) do
+    if j.item and j.item.name == name then
+      log("🛠 Craft job queued: " .. count .. "x " .. name)
+      return true
+    end
+  end
+
+  log("⚠ Craft request for " .. name .. " not yet accepted")
+  return false
 end
 
 -- Push requested items into the adjacent inventory
@@ -54,6 +64,8 @@ local function pushItem(name, quota)
   if isCraftable(name) then
     if requestCraft(name, quota - available) then
       log("⏳ Queued craft for " .. (quota - available) .. "x " .. name)
+    else
+      log("⚠ Could not autocraft " .. name .. " (no pattern or CPUs busy)")
     end
   else
     log("⚠ Skipping " .. name .. " (not craftable, only " .. available .. " in AE2)")
