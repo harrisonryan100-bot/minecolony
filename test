@@ -1,14 +1,38 @@
-local function tryExport(meBridge, stack)
+-- Wrap your ME Bridge peripheral
+local meBridge = peripheral.wrap("bottom")  -- adjust side if different
+if not meBridge then error("ME Bridge not found on bottom") end
+
+-- Function to safely export a stack to any valid side of ME Bridge
+local function exportToBridge(stack)
     local sides = {"top","bottom","left","right","front","back"}
     for _, side in ipairs(sides) do
-        local ok, result = pcall(function()
-            return meBridge.exportItem(stack, side)
-        end)
-        if ok and result > 0 then
-            print("Exported " .. result .. " of " .. stack.name .. " to side " .. side)
-            return result
+        if type(meBridge.exportItem) == "function" then
+            local ok, exported = pcall(meBridge.exportItem, meBridge, stack, side)
+            if ok and exported and exported > 0 then
+                print("Exported " .. exported .. "x " .. stack.name .. " to side " .. side)
+                return exported
+            end
         end
     end
-    print("Failed to export " .. stack.name)
+    print("Failed to export " .. stack.name .. " to any side")
     return 0
+end
+
+-- Example list of requests from your Colony Integrator
+-- Replace this with colony.getRequests() in your full script
+local requests = {
+    { target="Builder Ezra P. Barrett", name="Polished Deepslate Slab", item="minecraft:polished_deepslate_slab", count=3 },
+    { target="Builder's Hut", name="Crafting Table", item="minecraft:crafting_table", count=1 },
+    { target="Builder's Hut", name="Spruce Fence", item="minecraft:spruce_fence", count=2 }
+}
+
+-- Process each request
+for _, req in ipairs(requests) do
+    local stack = { name=req.item, count=req.count }
+    local exported = exportToBridge(stack)
+    if exported >= req.count then
+        print("Successfully fulfilled " .. req.count .. "x " .. req.item .. " for " .. req.target)
+    else
+        print("Could not fulfill full request for " .. req.item .. " ("..exported.."/"..req.count..")")
+    end
 end
