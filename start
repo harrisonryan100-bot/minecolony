@@ -1,76 +1,167 @@
 ------------------------------------------------------------
--- AE2ColonyWarehouse (Tile-Based)
--- Updated for fixed peripheral sides
+-- MineColonies AE2 Builder Automation
+-- Fully integrated with Builder Hut requests
+-- top = Colony Integrator
+-- bottom = ME Bridge
+-- Logs all activity to "automation_log.txt"
 ------------------------------------------------------------
 
---------------------
--- USER SETTINGS
---------------------
-local SCAN_INTERVAL  = 10
-local LOG_FILE       = "ae2colonywarehouse.log"
-local DEBUG          = true
-local DETAIL_TIMEOUT = 30
-local CRAFT_TIMEOUT  = 90
-local MAX_ATTEMPTS   = 3
-local SKIP_PATTERNS = {
-  "Tool of class",
-  "Hoe", "Shovel", "Axe", "Pickaxe", "Bow", "Sword", "Shield",
-  "Helmet", "Chestplate", "Leggings", "Boots", "Tunic", "Leather Cap",
-  "Rallying Banner", "Crafter", "Compostable", "Fertilizer",
-  "Flowers", "Food", "Fuel", "Smeltable Ore", "Stack List"
-}
+local SCAN_INTERVAL = 5
+local LOG_FILE = "automation_log.txt"
+local CRAFT_TIMEOUT = 90
+local MAX_ATTEMPTS = 3
+local DEBUG = true
 
---------------------
--- GLOBAL CRAFTING TRACKER
---------------------
+-- Track in-progress crafting
 local craftingTracker = {}
 
---------------------
--- HELPER FUNCTIONS
---------------------
-local function dprint(...)
-  if DEBUG then print("[DEBUG]", ...) end
-end
-
-local function safePeripheralCall(periph, method, ...)
-  if type(periph[method]) ~= "function" then
-    dprint("Method " .. method .. " not available on peripheral")
-    return nil, "Method " .. method .. " not available"
-  end
-  local ok, result = pcall(periph[method], periph, ...)
-  if not ok then
-    dprint("Error calling " .. method .. ": " .. tostring(result))
-    return nil, result
-  end
-  return result, nil
-end
-
---------------------
--- PERIPHERAL SETUP
---------------------
--- Wrap fixed sides
-local monitor = peripheral.find("monitor")
-if not monitor then error("No advanced monitor found.") end
-monitor.setTextScale(0.5)
-monitor.setBackgroundColor(colors.black)
-monitor.setTextColor(colors.white)
-monitor.clear()
-monitor.setCursorPos(1,1)
-monitor.setCursorBlink(false)
-
-local meBridge = peripheral.wrap("bottom")
-if not meBridge then error("ME Bridge not detected on 'bottom' side") end
-
+-- Wrap peripherals
 local colony = peripheral.wrap("top")
-if not colony then error("Colony Integrator not detected on 'top' side") end
-if not colony.isInColony then error("Colony Integrator is not inside a colony.") end
+local meBridge = peripheral.wrap("bottom")
 
-print("Colony Integrator detected on top")
-print("ME Bridge detected on bottom")
+-- Logging helper
+local function log(msg)
+    local line = os.date("%H:%M:%S") .. " | " .. msg
+    print(line)
+    local f = fs.open(LOG_FILE, "a")
+    if f then
+        f.writeLine(line)
+        f.close()
+    end
+end
 
--- All remaining functions (safeExportItemToTop, safeCraftItem, displayTileMenu, processRequests, etc.)
--- remain unchanged. Just make sure every reference to 'meBridge' or 'colony' uses the variables above.
+-- Safe call wrapper
+local function safeCall(periph, func, ...)
+    if type(periph[func]) ~= "function" then
+        log("Peripheral missing function: " .. func)
+        return nil
+    end
+    local ok, res = pcall(periph[func], periph, ...)
+    if not ok then
+        log("Error calling " .. func .. ": " .. tostring(res))
+        return nil
+    end
+    return res
+end
 
-------------------------------------------------------------
--- End of AE2ColonyWarehouse peripheral fix
-------------------------------------------------------------
+-- Build current AE2 inventory counts
+local function getAEInventory()
+    local items = {}
+    local all = safeCall(meBridge, "listItems") or {}
+    for _, data in ipairs(all) do
+        if data.name then
+            items[data.name] = (items[data.name] or 0) + (data.count or 0)
+        end
+    end
+    return items
+end
+
+-- Check if item is craftable
+local function isCraftable(item)
+    local craftables = safeCall(meBridge, "listCraftableItems") or {}
+    for _, c in ipairs(craftables) do
+        if c.name == item then return true end
+    end
+    return false
+end
+
+-- Attempt to craft an item
+local function craftItem(item, count)
+    if not isCraftable(item) then
+        log("Cannot craft " .. item)
+        return false
+    end
+    local ok = safeCall(meBridge, "craftItem", {name=item, count=count})
+    if ok then
+        craftingTracker[item] = {
+            expected = count,
+            timestamp = os.clock(),
+            attempts = 1,
+            timedOut = false,
+            lastCount = 0
+        }
+        log("Requested craft of " .. count .. "x " .. item)
+        return true
+    end
+    log("Failed to request craft for " .. item)
+    return false
+end
+
+-- Export items to Builder Hut (top side of ME Bridge by default)
+local function exportItem(item, count)
+    local exported = safeCall(meBridge, "exportItem", {name=item, count=count}, "top")
+    if exported and exported > 0 then
+        log("Exported " .. exported .. "x " .. item .. " to Builder Hut")
+        return exported
+    else
+        log("Failed to export " .. item)
+        return 0
+    end
+end
+
+-- Fulfill requests from Builder Hut only
+local function processRequests()
+    local allRequests = safeCall(colony, "getRequests") or {}
+    if #allRequests == 0 then
+        log("No requests in Colony Integrator")
+        return
+    end
+    log("Found " .. #allRequests .. " request(s)")
+
+    local aeInventory = getAEInventory()
+
+    for _, req in ipairs(allRequests) do
+        if string.find(req.target, "Builder") then
+            local itemName = req.items[1] and req.items[1].name
+            local count = req.count or 1
+
+            if not itemName then
+                log("Could not determine AE2 item for request: " .. req.name)
+            else
+                local available = aeInventory[itemName] or 0
+                local provided = 0
+
+                -- Export what is available
+                if available > 0 then
+                    local toExport = math.min(available, count)
+                    provided = exportItem(itemName, toExport)
+                    aeInventory[itemName] = available - provided
+                end
+
+                -- If still missing, attempt craft
+                if provided < count then
+                    local missing = count - provided
+                    if isCraftable(itemName) then
+                        local tracked = craftingTracker[itemName]
+                        if not tracked or tracked.timedOut then
+                            local success = craftItem(itemName, missing)
+                            if success then
+                                log("Scheduled craft for missing " .. missing .. "x " .. itemName)
+                            end
+                        else
+                            log(itemName .. " craft in progress, waiting...")
+                        end
+                    else
+                        log("Item not available and not craftable: " .. itemName)
+                    end
+                end
+
+                -- If we provided all, complete request
+                if provided >= count then
+                    safeCall(colony, "completeRequest", req)
+                    log("Request fulfilled: " .. itemName)
+                else
+                    log("Will retry request for Builder Hut next loop: " .. itemName)
+                end
+            end
+        else
+            -- Skip non-builder requests quietly
+        end
+    end
+end
+
+-- Main loop
+while true do
+    processRequests()
+    sleep(SCAN_INTERVAL)
+end
