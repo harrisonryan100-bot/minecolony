@@ -1,9 +1,9 @@
 --------------------
--- BUILDER HUT AUTOMATION (5-block range)
+-- BUILDER HUT AUTOMATION (5-block range from computer)
 --------------------
 local SCAN_INTERVAL = 10  -- seconds between idle scans
 local CHEST_SIDE = "left" -- adjust to where your chest is
-local MAX_DISTANCE = 5    -- blocks from integrator to consider
+local MAX_DISTANCE = 5    -- blocks from computer to consider
 local colony_integrator = peripheral.wrap("top")
 local me_bridge = peripheral.wrap("bottom")
 local DEBUG = true
@@ -43,19 +43,19 @@ local function exportToChest(itemName, count)
     end
 end
 
--- Filter Builder Hut requests by distance
+-- Filter Builder Hut requests by distance from computer
 local function getNearbyBuilderRequests()
     local allRequests = colony_integrator.getRequests() or {}
     local nearbyRequests = {}
 
-    local integratorPos = colony_integrator.getColonyPosition() -- {x, y, z} assumed
+    local computerPos = {x=0, y=0, z=0}  -- assume computer is origin
 
     for _, r in ipairs(allRequests) do
         if r.target and string.find(r.target, "Builder") then
             local bPos = r.buildingPosition or {x=0, y=0, z=0} -- fallback if API doesn't provide
-            local dx = bPos.x - integratorPos.x
-            local dy = bPos.y - integratorPos.y
-            local dz = bPos.z - integratorPos.z
+            local dx = bPos.x - computerPos.x
+            local dy = bPos.y - computerPos.y
+            local dz = bPos.z - computerPos.z
             local dist = math.sqrt(dx*dx + dy*dy + dz*dz)
             if dist <= MAX_DISTANCE then
                 table.insert(nearbyRequests, r)
@@ -95,10 +95,8 @@ end
 while true do
     local hasRequests = processRequests()
     if hasRequests then
-        -- If we just processed requests, loop quickly to catch new ones
-        sleep(1)
+        sleep(1)  -- quick loop if processing requests
     else
-        -- If no requests, wait SCAN_INTERVAL seconds before next scan
-        sleep(SCAN_INTERVAL)
+        sleep(SCAN_INTERVAL)  -- wait longer if no requests
     end
 end
