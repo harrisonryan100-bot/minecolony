@@ -7,35 +7,70 @@ if not colony_integrator then error("No Colony Integrator found on top!") end
 if not me_bridge then error("No ME Bridge found on bottom!") end
 if not chest then error("No chest found on back!") end
 
--- Helper function: export items from ME Bridge to chest
-local function exportItemToChest(itemName, count)
-    local stack = { name = itemName, count = count }
-    local sides = {"top","bottom","left","right","front","back"} -- just in case
-
-    -- Attempt export to chest
-    local exported = 0
-    for _, side in ipairs(sides) do
-        local ok, result = pcall(function()
-            return me_bridge.exportItem(stack, side)
-        end)
-        if ok and result > 0 then
-            exported = exported + result
+-- Helper: get AE2 count for an item
+local function getAE2Count(itemName)
+    local items = me_bridge.list() or {}
+    for _, item in ipairs(items) do
+        if item.name == itemName then
+            return item.count or 0
         end
     end
+    return 0
+end
 
+-- Helper: export items from ME Bridge to chest
+local function exportItemToChest(itemName, count)
+    local stack = { name = itemName, count = count }
+    local exported = me_bridge.exportItem(stack, "back")
     if exported > 0 then
         print("Exported " .. exported .. "x " .. itemName .. " to chest.")
     else
         print("Failed to export " .. itemName)
     end
-
     return exported
 end
 
--- Example: scan requests from integrator and export
-local requests = colony_integrator.getRequests()
-for _, req in ipairs(requests) do
-    local itemName = req.items[1].name
-    local itemCount = req.count
-    exportItemToChest(itemName, itemCount)
+-- Helper: return unrequested items from chest to AE2
+local function returnUnrequestedItems(requestedItems)
+    local invItems = chest.list() or {}
+    for slot, item in pairs(invItems) do
+        if not requestedItems[item.name] then
+            local returned = me_bridge.importItem({ name=item.name, count=item.count }, "back")
+            print("Returned " .. (returned or 0) .. "x " .. item.name .. " to AE2")
+        end
+    end
+end
+
+-- Main loop
+while true do
+    local requests = colony_integrator.getRequests() or {}
+
+    -- Build list of requested items
+    local requestedItems = {}
+    for _, req in ipairs(requests) do
+        if req.target == "Builder's Hut" then
+            local itemName = req.items[1].name
+            requestedItems[itemName] = (requestedItems[itemName] or 0) + req.count
+        end
+    end
+
+    -- Handle requests
+    for itemName, needed in pairs(requestedItems) do
+        local aeCount = getAE2Count(itemName)
+        local missing = needed - aeCount
+        if missing > 0 then
+            -- Request crafting for missing amount
+            print("Requesting craft of " .. missing .. "x " .. itemName)
+            me_bridge.craftItem({ name=itemName, count=missing })
+        end
+
+        -- Export exactly what we need
+        local exportCount = math.min(needed, getAE2Count(itemName))
+        exportItemToChest(itemName, exportCount)
+    end
+
+    -- Return any unrequested items
+    returnUnrequestedItems(requestedItems)
+
+    sleep(10)
 end
