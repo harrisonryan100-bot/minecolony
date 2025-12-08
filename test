@@ -1,7 +1,9 @@
-print("=== Listing all peripherals ===")
-for _, side in ipairs({"top","bottom","left","right","front","back"}) do
-    if peripheral.isPresent(side) then
-        print(side, peripheral.getType(side))
+local sides = {"top","bottom","left","right","front","back"}
+for _, side in ipairs(sides) do
+    local ok, pType = pcall(peripheral.getType, side)
+    if ok and pType then
+        print(side, "detected type:", pType)
+    else
+        print(side, "nothing detected")
     end
 end
-print("=== Scan complete ===")
