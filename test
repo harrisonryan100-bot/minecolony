@@ -4,28 +4,46 @@ local me = peripheral.wrap("bottom")
 -- Computer position
 local compX, compY, compZ = 31, 62, -45
 
--- Logging helper
+-- Simple log helper (prints only, no file writes)
 local function log(msg)
-    local timestamp = os.date("%H:%M:%S")
-    print(timestamp .. " | " .. msg)
-    local file = fs.open("automation_log.txt", "a")
-    file.writeLine(timestamp .. " | " .. msg)
-    file.close()
+    print(os.date("%H:%M:%S") .. " | " .. msg)
+end
+
+-- Count items in AE2
+local function getItemCount(itemName)
+    local items = me.getItems() or {}
+    local total = 0
+    for _, item in pairs(items) do
+        if item.name == itemName then
+            total = total + (item.count or 0)
+        end
+    end
+    return total
+end
+
+-- Export or autocraft
+local function pullOrCraft(itemName, count)
+    local available = getItemCount(itemName)
+    if available >= count then
+        local ok = me.exportItem({name=itemName, count=count}, "left")
+        log((ok and "✔ Exported " or "✖ Failed ") .. count .. "x " .. itemName)
+        return ok
+    else
+        log("⏳ Crafting " .. (count - available) .. "x " .. itemName)
+        me.craftItem({name=itemName, count=(count - available)})
+        while getItemCount(itemName) < count do sleep(2) end
+        return pullOrCraft(itemName, count)
+    end
 end
 
 -- Find nearest builder hut
 local function getNearestBuilder()
-    local nearest = nil
-    local nearestDist = math.huge
-    local buildings = colony.getBuildings() or {}
-    for _, b in ipairs(buildings) do
+    local nearest, nearestDist = nil, math.huge
+    for _, b in ipairs(colony.getBuildings() or {}) do
         if b.type == "builder" then
             local x, y, z = b.location.x, b.location.y, b.location.z
             local dist = math.sqrt((x - compX)^2 + (y - compY)^2 + (z - compZ)^2)
-            if dist < nearestDist then
-                nearestDist = dist
-                nearest = b
-            end
+            if dist < nearestDist then nearestDist, nearest = dist, b end
         end
     end
     return nearest
@@ -34,19 +52,21 @@ end
 -- Fulfill requests for nearest builder hut
 local function fulfillNearestBuilderRequests()
     local nearest = getNearestBuilder()
-    if not nearest then
-        log("No builder huts found")
-        return
-    end
+    if not nearest then return log("No builder huts found") end
 
-    log("Targeting nearest builder hut: " .. nearest.name)
+    log("🎯 Targeting hut: " .. nearest.name)
     local requests = colony.getRequests() or {}
+    local handled = 0
     for _, req in ipairs(requests) do
         if req.target == nearest.name then
-            -- Here you’d call your fulfillRequest(req) function
-            log("Processing request for " .. req.target)
+            log("➡ Request for " .. req.target)
+            for _, item in ipairs(req.items or {}) do
+                pullOrCraft(item.name, item.count)
+            end
+            handled = handled + 1
         end
     end
+    log("Loop complete, handled " .. handled .. " requests")
 end
 
 -- Main loop
