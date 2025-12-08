@@ -1,60 +1,9 @@
--- Wrap peripherals
-local colony_integrator = peripheral.wrap("top")
-if not colony_integrator then error("No colony_integrator found on top") end
+local integrator = peripheral.wrap("top")
+local requests = integrator.getRequests()
 
-local me_bridge = peripheral.wrap("bottom")
-if not me_bridge then error("No me_bridge found on bottom") end
-
--- Safe export
-local function safeExportItem(stack)
-    local sides = {"top", "bottom", "left", "right", "front", "back"}
-    for _, side in ipairs(sides) do
-        local ok, exported = pcall(function()
-            return me_bridge.exportItem(stack, side)
-        end)
-        if ok and exported and exported > 0 then
-            print("Exported " .. exported .. "x " .. stack.name .. " to side: " .. side)
-            return exported
-        end
-    end
-    print("Could not export: " .. stack.name)
-    return 0
-end
-
--- Main loop
-while true do
-    local all = colony_integrator.getRequests() or {}
-    local ezraRequests = {}
-
-    -- Filter only Ezra Builder Hut requests
-    for _, req in ipairs(all) do
-        if req.target:find("Builder") and req.target:find("Ezra") then
-            table.insert(ezraRequests, req)
-        end
-    end
-
-    -- If no requests, idle mode
-    if #ezraRequests == 0 then
-        print("No Ezra requests. Sleeping 10 seconds.")
-        sleep(10)
-    else
-        -- Handle exactly ONE request
-        local req = ezraRequests[1]
-
-        local itemName = req.items[1].name
-        local countNeeded = req.count
-
-        print("Ezra Request: " .. countNeeded .. "x " .. itemName)
-
-        -- Fulfil request
-        local exported = safeExportItem({
-            name = itemName,
-            count = countNeeded
-        })
-
-        print("Exported " .. exported .. "/" .. countNeeded .. " to Ezra")
-
-        -- Small pause before re-scanning
-        sleep(1)
+for i, r in ipairs(requests) do
+    print("---- REQUEST #"..i.." ----")
+    for k, v in pairs(r) do
+        print(k, textutils.serialize(v))
     end
 end
