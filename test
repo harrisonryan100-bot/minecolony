@@ -1,84 +1,40 @@
--- ===========================================
--- MineColonies Builder Diagnostic & Logging
--- Colony Integrator on TOP, ME Bridge on BOTTOM
--- Logs Builder Hut requests and maps to AE2 item IDs
--- Does NOT move items (safe for your current AE2 setup)
--- ===========================================
+print("=== Peripheral Check ===")
 
--- Wrap peripherals
-colony = peripheral.wrap("top")      -- Colony Integrator
-me = peripheral.wrap("bottom")       -- ME Bridge
-
-if not colony then
-    print("Colony Integrator NOT detected on top! Exiting.")
-    return
-else
-    print("Colony Integrator detected on top")
+-- List connected peripherals
+for i, name in ipairs(peripheral.getNames()) do
+    print(i, name, peripheral.getType(name))
 end
 
-if not me then
-    print("ME Bridge NOT detected on bottom! Exiting.")
-    return
-else
+-- Wrap ME Bridge and Colony Integrator
+local meBridge = peripheral.wrap("bottom")
+local colony = peripheral.wrap("top")
+
+-- ME Bridge summary
+if meBridge then
     print("ME Bridge detected on bottom")
-end
+    local funcs = {}
+    for k, v in pairs(meBridge) do if type(v) == "function" then table.insert(funcs, k) end end
+    print("Functions available:", table.concat(funcs, ", "))
 
--- Clear previous log
-if fs.exists("automation_log.txt") then
-    fs.delete("automation_log.txt")
-end
-
--- Logging helper
-function log(msg)
-    local timestamped = os.date("%H:%M:%S") .. " | " .. msg
-    print(timestamped)
-    local file = fs.open("automation_log.txt", "a")
-    file.writeLine(timestamped)
-    file.close()
-end
-
--- Mapping from parsed request names to AE2 item IDs
-nameToAE2 = {
-    ["Crafting Table"] = "minecraft:crafting_table",
-    ["Polished Deepslate Panel"] = "minecraft:polished_deepslate_slab",
-    ["Spruce Fence"] = "minecraft:spruce_fence",
-    ["Oak Planks"] = "minecraft:oak_planks",
-    ["Stone Bricks"] = "minecraft:stone_bricks",
-    ["Polished Deepslate Slab"] = "minecraft:polished_deepslate_slab",
-    ["Cobblestone Extra Shingles"] = "minecraft:cobblestone" -- example mapping
-}
-
--- Main diagnostic loop
-while true do
-    local requests = colony.getRequests() or {}
-    log("Found " .. #requests .. " request(s) in Colony Integrator")
-
-    for i, req in ipairs(requests) do
-        -- Only handle Builder requests
-        if req.target and string.find(req.target, "Builder") then
-            -- Only handle PENDING or IN_PROGRESS requests
-            if req.state == "PENDING" or req.state == "IN_PROGRESS" then
-                -- Parse quantity prefix
-                local parsedName = nil
-                if req.name then
-                    local s, e, name = string.find(req.name, "%d+%-?%d*%s+(.+)")
-                    parsedName = name
-                end
-
-                local ae2Item = (req.items and req.items.name) or nameToAE2[parsedName]
-                local totalCount = (req.items and req.items.count) or req.count or 1
-
-                if ae2Item then
-                    log("Builder Request: " .. req.target .. " needs " .. totalCount .. "x " .. ae2Item .. " (original: " .. req.name .. ")")
-                else
-                    log("Builder Request: " .. req.target .. " could not determine AE2 item for " .. req.name)
-                end
-
-                -- Optional: mark as complete manually
-                -- colony.completeRequest(req)
-            end
-        end
+    local items = meBridge.listItems() or {}
+    print("Total items in network:", #items)
+    for i = 1, math.min(5, #items) do
+        print(string.format("  %dx %s", items[i].count or 0, items[i].name or "unknown"))
     end
+else
+    print("ME Bridge not detected on bottom")
+end
 
-    sleep(5) -- Wait 5 seconds before next loop
+-- Colony Integrator summary
+if colony then
+    print("Colony Integrator detected on top")
+    local requests = colony.getRequests() or {}
+    print("Requests found:", #requests)
+    for i = 1, math.min(5, #requests) do
+        local r = requests[i]
+        local name = r.items and r.items[1] and r.items[1].name or "unknown"
+        print(string.format("  %s x%d -> %s", name, r.count or 0, r.target or "unknown"))
+    end
+else
+    print("Colony Integrator not detected on top")
 end
