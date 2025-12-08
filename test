@@ -1,65 +1,40 @@
--- Minimal AE2 -> Chest exporter for MineColonies
-
--- CONFIG
-local SCAN_INTERVAL = 10  -- seconds between request scans
-local LOG_FILE = "ae2_export.log"
-
--- WRAP PERIPHERALS
-local sides = {"top","bottom","left","right","front","back"}
-local meBridge, colonyIntegrator, outputSide
-
--- Find ME Bridge and Colony Integrator
-for _, side in ipairs(sides) do
-    local pType = peripheral.getType(side)
-    if pType == "me_bridge" then meBridge = peripheral.wrap(side) end
-    if pType == "colony_integrator" then colonyIntegrator = peripheral.wrap(side) end
+-- Wrap peripherals
+local colony = peripheral.wrap("top") -- Colony Integrator
+local storage = peripheral.find("inventory") -- Finds any adjacent inventory (barrel/chest/ME Chest)
+if not storage then
+    error("No adjacent chest/barrel/ME Chest found!")
 end
 
-if not meBridge then error("No ME Bridge found!") end
-if not colonyIntegrator then error("No Colony Integrator found!") end
-
--- Detect output chest
-for _, side in ipairs(sides) do
-    if peripheral.getType(side) == "inventory" then
-        outputSide = side
-        break
-    end
-end
-if not outputSide then error("No chest/barrel inventory found!") end
-
--- HELPER: safe pull from ME Bridge
-local function safePull(itemName, count)
-    if type(meBridge.pullItem) ~= "function" then
-        print("ME Bridge does not support pullItem")
-        return 0
-    end
-    local ok, pulled = pcall(meBridge.pullItem, meBridge, {name=itemName, count=count})
-    if ok then return pulled or 0 else return 0 end
-end
-
--- HELPER: push to chest
-local function pushToChest(stack)
-    local ok, pushed = pcall(peripheral.call, outputSide, "pushItem", stack)
-    if ok then return pushed or 0 else return 0 end
-end
-
--- MAIN LOOP
+-- Main loop
 while true do
-    local requests = colonyIntegrator.getRequests()
-    if requests then
-        for _, req in ipairs(requests) do
-            local item = req.items[1].name
-            local needed = req.count or 1
-            local pulled = safePull(item, needed)
-            if pulled > 0 then
-                local pushed = pushToChest({name=item, count=pulled})
-                print(string.format("%s x%d -> %s | pushed=%d", item, pulled, req.target, pushed))
-            else
-                print("Could not pull " .. item)
+    local requests = colony.getRequests() or {}
+
+    for _, req in ipairs(requests) do
+        -- Only Builder Hut requests
+        if req.target:find("Builder") then
+            local itemName = req.items[1].name
+            local itemCount = req.count
+
+            -- Check how many are in storage
+            local storageItems = storage.list() -- Table of slots and item info
+            local pulled = 0
+
+            for slot, info in pairs(storageItems) do
+                if info.name == itemName and pulled < itemCount then
+                    local toPull = math.min(info.count, itemCount - pulled)
+                    local success = storage.pushItems(peripheral.getName(storage), slot, toPull)
+                    if success then
+                        pulled = pulled + toPull
+                        print(string.format("Moved %d x %s to Builder Hut", toPull, itemName))
+                    end
+                end
+            end
+
+            if pulled < itemCount then
+                print(string.format("Warning: Could only move %d/%d x %s", pulled, itemCount, itemName))
             end
         end
-    else
-        print("No requests found")
     end
-    sleep(SCAN_INTERVAL)
+
+    sleep(10) -- Wait 10 seconds before scanning again
 end
