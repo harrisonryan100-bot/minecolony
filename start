@@ -1,62 +1,105 @@
--- Wrap peripherals
+--------------------
+-- CONFIGURATION
+--------------------
+local ME_SIDE       = "bottom"   -- side the ME Bridge is on
+local CHEST_SIDE    = "right"    -- side the chest is on
+local SCAN_INTERVAL = 10         -- seconds between scans
+local DEBUG         = true
+
+--------------------
+-- SETUP PERIPHERALS
+--------------------
+local meBridge = peripheral.wrap(ME_SIDE)
+if not meBridge then error("No ME Bridge found on side " .. ME_SIDE) end
+
+local chest = peripheral.wrap(CHEST_SIDE)
+if not chest then error("No chest found on side " .. CHEST_SIDE) end
+
 local colony = peripheral.wrap("top")
-local meBridge = peripheral.wrap("bottom")
+if not colony then error("No Colony Integrator found on top") end
 
--- Check peripherals
-if not colony then
-    print("ERROR: Colony Integrator NOT found on top")
-    return
-end
-if not meBridge then
-    print("ERROR: ME Bridge NOT found on bottom")
-    return
+--------------------
+-- DEBUG PRINT
+--------------------
+local function dprint(...)
+    if DEBUG then print("[DEBUG]", ...) end
 end
 
-print("Colony Integrator detected on top")
-print("ME Bridge detected on bottom")
-
--- Detect a valid export side
-local sides = {"top","bottom","left","right","front","back"}
-local exportSide = nil
-for _, side in ipairs(sides) do
-    local ok = pcall(function()
-        meBridge.exportItem({name="minecraft:stone", count=1}, side)
-    end)
+--------------------
+-- HELPER FUNCTIONS
+--------------------
+-- Craft items if not enough are in AE2
+local function craftItem(itemName, count)
+    if type(meBridge.craftItem) ~= "function" then
+        dprint("ME Bridge cannot craft items: " .. itemName)
+        return false
+    end
+    local ok, result = pcall(meBridge.craftItem, meBridge, {name=itemName, count=count})
     if ok then
-        exportSide = side
-        break
+        dprint("Requested craft: " .. count .. "x " .. itemName)
+        return true
+    else
+        dprint("Craft request failed for " .. itemName .. ": " .. tostring(result))
+        return false
     end
 end
 
-if not exportSide then
-    print("ERROR: No valid inventory found next to ME Bridge")
-    return
-else
-    print("Exporting items to side: "..exportSide)
+-- Pull items from AE2 and move to chest
+local function moveToChest(itemName, count)
+    local items = meBridge.listItems() or {}
+    local total = 0
+    for _, entry in ipairs(items) do
+        if entry.name == itemName then
+            local toPull = math.min(entry.count, count - total)
+            -- Actually move item to chest
+            if type(meBridge.withdrawItem) == "function" then
+                local ok, pulled = pcall(meBridge.withdrawItem, meBridge, itemName, toPull)
+                if ok and pulled and pulled > 0 then
+                    chest.pullItem(ME_SIDE, pulled) -- chest pulls the items in
+                    total = total + pulled
+                    dprint("Moved " .. pulled .. "x " .. itemName .. " to chest")
+                end
+            end
+            if total >= count then break end
+        end
+    end
+    return total
 end
 
--- Main loop: attempt to fulfill builder hut requests
+--------------------
+-- MAIN LOOP
+--------------------
 while true do
     local requests = colony.getRequests() or {}
+    dprint("Found " .. #requests .. " request(s)")
     
     for _, req in ipairs(requests) do
-        -- Only process builder huts
-        if req.target and req.target:match("Builder") and req.items and req.items[1] and req.items[1].name then
-            local itemName = req.items[1].name
-            local count = req.count or 1
-            
-            -- Attempt to export
-            local ok, exported = pcall(function()
-                return meBridge.exportItem({name=itemName, count=count}, exportSide)
-            end)
-            
-            if ok then
-                print(string.format("Attempted to export %d x %s to %s: success=%s", count, itemName, req.target, tostring(exported)))
-            else
-                print(string.format("Attempted to export %d x %s to %s: FAILED (%s)", count, itemName, req.target, tostring(exported)))
+        local itemName = req.items[1].name
+        local needed   = req.count
+        dprint("Request: " .. needed .. "x " .. itemName .. " for " .. req.target)
+
+        -- Check how many are in AE2
+        local aeItems = meBridge.listItems() or {}
+        local available = 0
+        for _, entry in ipairs(aeItems) do
+            if entry.name == itemName then
+                available = available + entry.count
             end
-        end -- end of Builder check
-    end -- end of requests loop
-    
-    sleep(5) -- wait before checking requests again
-end -- end of while loop
+        end
+
+        local toCraft = 0
+        if available < needed then
+            toCraft = needed - available
+            craftItem(itemName, toCraft)
+        end
+
+        -- Move items from AE2 to chest
+        local pulled = moveToChest(itemName, needed)
+        if pulled < needed then
+            dprint("Could not fulfill full request for " .. itemName .. ", pulled " .. pulled)
+        else
+            dprint("Successfully moved " .. pulled .. "x " .. itemName .. " to chest")
+        end
+    end
+    sleep(SCAN_INTERVAL)
+end
