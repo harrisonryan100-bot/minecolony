@@ -19,8 +19,7 @@ print("ME Bridge detected on bottom")
 local sides = {"top","bottom","left","right","front","back"}
 local exportSide = nil
 for _, side in ipairs(sides) do
-    local ok, err = pcall(function()
-        -- test with a dummy item; will fail silently if AE2 doesn't have it
+    local ok = pcall(function()
         meBridge.exportItem({name="minecraft:stone", count=1}, side)
     end)
     if ok then
@@ -56,7 +55,8 @@ while true do
             else
                 print(string.format("Attempted to export %d x %s to %s: FAILED (%s)", count, itemName, req.target, tostring(exported)))
             end
-        end
-    end
+        end -- end of Builder check
+    end -- end of requests loop
     
-    sleep(5) -- wait befor
+    sleep(5) -- wait before checking requests again
+end -- end of while loop
