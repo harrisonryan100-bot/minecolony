@@ -1,65 +1,81 @@
--- Safely wrap peripherals
-local colony_integrator = peripheral.find("colonyIntegrator")
+-- ========================
+-- Ezra Builder Automation
+-- ========================
+
+-- Wrap peripherals explicitly
+local colony_integrator = peripheral.wrap("top")
 if not colony_integrator then error("No colony integrator found on top") end
 
-local me_bridge = peripheral.find("meBridge")
+local me_bridge = peripheral.wrap("bottom")
 if not me_bridge then error("No ME Bridge found on bottom") end
 
-local chest = peripheral.find("minecraft:chest") or peripheral.find("minecraft:barrel")
-if not chest then error("No chest or barrel found") end
-
-local SCAN_INTERVAL = 10
-
-local function dprint(...)
-    print("[DEBUG]", ...)
+-- Find adjacent chest (any side)
+local sides = {"top","bottom","left","right","front","back"}
+local chest_side = nil
+for _, side in ipairs(sides) do
+    local p = peripheral.wrap(side)
+    if p and p.getItemLimit then
+        chest_side = side
+        break
+    end
 end
+if not chest_side then error("No chest or barrel detected adjacent to computer") end
+local chest = peripheral.wrap(chest_side)
 
--- Export from ME Bridge to chest using tested method
-local function exportItemToChest(itemName, count)
-    local stack = { name = itemName, count = count }
-    local sides = {"top", "bottom", "left", "right", "front", "back"}
-    for _, side in ipairs(sides) do
-        local ok, result = pcall(function()
-            return me_bridge.exportItem(stack, side)
-        end)
-        if ok and type(result) == "number" and result > 0 then
-            dprint("Exported " .. result .. "/" .. count .. " of " .. itemName .. " to side " .. side)
-            return result
+-- Helper: safe export from ME Bridge to chest
+local function exportItem(item_name, count)
+    local exported = 0
+    -- Try each item in ME Bridge
+    local items = me_bridge.getAvailableExternalItemStorage() or {}
+    for _, data in ipairs(items) do
+        if data.name == item_name then
+            local toMove = math.min(data.count, count - exported)
+            local ok, result = pcall(me_bridge.exportItem, {name=item_name, count=toMove}, chest_side)
+            if ok and type(result) == "number" then
+                exported = exported + result
+            end
+            if exported >= count then break end
         end
     end
-    dprint("Failed to export " .. itemName)
-    return 0
+    return exported
 end
 
--- Process Ezra's requests
-local function fulfillEzraRequests()
-    local requests = colony_integrator.getRequests()
-    if not requests then
-        dprint("No requests returned from colony integrator")
-        return
+-- Helper: get builder hut requests within 5 blocks
+local function getNearbyBuilderRequests()
+    local all_requests = colony_integrator.getRequests() or {}
+    local cx, cy, cz = 0, 0, 0
+    if type(peripheral.wrap("top")) == "table" and colony_integrator.getColonyPosition then
+        cx, cy, cz = colony_integrator.getColonyPosition()
     end
 
-    local found = false
-    for _, req in ipairs(requests) do
-        if req.target == "Builder Ezra P. Barrett" then
-            found = true
-            local itemName = req.items[1].name
-            local needed = req.count
-            local exported = exportItemToChest(itemName, needed)
-            if exported > 0 then
-                print(string.format("Exported %d/%d of %s to chest", exported, needed, itemName))
-            else
-                print("Could not export " .. itemName)
+    local nearby = {}
+    for _, req in ipairs(all_requests) do
+        if string.find(req.target or "", "Builder") then
+            local bx, by, bz = req.positionX or cx, req.positionY or cy, req.positionZ or cz
+            local dx = math.abs(bx - cx)
+            local dy = math.abs(by - cy)
+            local dz = math.abs(bz - cz)
+            if dx <= 5 and dy <= 5 and dz <= 5 then
+                table.insert(nearby, req)
             end
         end
     end
-    if not found then
-        dprint("No requests found for Ezra this cycle")
-    end
+    return nearby
 end
 
 -- Main loop
 while true do
-    fulfillEzraRequests()
-    sleep(SCAN_INTERVAL)
+    local requests = getNearbyBuilderRequests()
+    if #requests == 0 then
+        print("No nearby builder requests. Waiting 10s...")
+        sleep(10)
+    else
+        for _, req in ipairs(requests) do
+            local item = req.items[1].name
+            local needed = req.count or 1
+            local exported = exportItem(item, needed)
+            print(string.format("Attempted to export %d of %s to chest. Exported %d", needed, item, exported))
+            sleep(0.5) -- small pause between requests
+        end
+    end
 end
