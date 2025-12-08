@@ -1,9 +1,17 @@
-local meBridge = peripheral.wrap("bottom")
-local sides = {"top","bottom","left","right","front","back"}
+-- Wrap ME Bridge
+local me = peripheral.wrap("bottom") -- adjust side as needed
+print("Listing all methods for this peripheral:")
+for k,v in pairs(me) do
+    print(k, type(v))
+end
 
-for _, side in ipairs(sides) do
-    local ok, exported = pcall(function()
-        return meBridge.pullItem({name="minecraft:stone", count=1}, side)
-    end)
-    print(side, ok, exported)
+-- Test listItems
+if type(me.listItems) == "function" then
+    local items = me.listItems()
+    print("Items in AE2:")
+    for i,data in ipairs(items) do
+        print(data.count, data.name)
+    end
+else
+    print("listItems() not available")
 end
