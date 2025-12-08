@@ -25,33 +25,24 @@ local function isCraftable(name)
   return ok and result or false
 end
 
--- Request autocrafting with retry and task confirmation
-local function requestCraft(name, count, retries, delay)
-  retries = retries or 3
-  delay = delay or 3
-
-  for attempt = 1, retries do
-    local ok, task = pcall(function()
-      return me.craftItem({name=name, count=count})
-    end)
-
-    if ok and task then
-      local tasks = me.getCraftingTasks() or {}
-      for _, t in ipairs(tasks) do
-        if t.item and t.item.name == name then
-          log(("🛠 Craft task queued (%dx %s) on attempt %d"):format(count, name, attempt))
-          return true
-        end
-      end
-      log(("⌛ Craft requested but not visible yet (%dx %s), attempt %d"):format(count, name, attempt))
-    else
-      log(("❌ craftItem failed (%dx %s), attempt %d"):format(count, name, attempt))
-    end
-    sleep(delay)
+-- Request autocrafting safely
+local function requestCraft(name, count)
+  if not isCraftable(name) then
+    log("⚠ Skipping uncraftable item: " .. name)
+    return false
   end
 
-  log("⚠ Craft task never confirmed for " .. name)
-  return false
+  local ok, result = pcall(function()
+    return me.craftItem({name=name, count=count})
+  end)
+
+  if ok and result then
+    log("🛠 Craft queued: " .. count .. "x " .. name)
+    return true
+  else
+    log("❌ craftItem failed for " .. name)
+    return false
+  end
 end
 
 -- Push requested items into the adjacent inventory
@@ -64,15 +55,10 @@ local function pushItem(name, quota)
     return
   end
 
-  -- ✅ Only attempt craft if AE2 says it's craftable
-  if isCraftable(name) then
-    if requestCraft(name, quota - available) then
-      log("⏳ Queued craft for " .. (quota - available) .. "x " .. name)
-    else
-      log("⚠ Could not queue craft for " .. name)
-    end
+  if requestCraft(name, quota - available) then
+    log("⏳ Queued craft for " .. (quota - available) .. "x " .. name)
   else
-    log("⚠ Skipping " .. name .. " (not craftable, only " .. available .. " in AE2)")
+    log("⚠ Could not queue craft for " .. name)
   end
 end
 
