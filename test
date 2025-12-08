@@ -5,8 +5,7 @@ if not colony then error("No Colony Integrator detected on TOP") end
 local me = peripheral.wrap("bottom")
 if not me then error("No ME Bridge detected on BOTTOM") end
 
--- Set the side of the ME Bridge where your chest/barrel is attached
-local TARGET_SIDE = "right"   -- change to "top", "bottom", "left", etc. as needed
+local TARGET_SIDE = "right"   -- side of chest/barrel attached to ME Bridge
 
 local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
 
@@ -28,7 +27,7 @@ end
 
 -- Request autocrafting with retry and task confirmation
 local function requestCraft(name, count, retries, delay)
-  retries = retries or 5
+  retries = retries or 3
   delay = delay or 3
 
   for attempt = 1, retries do
@@ -65,8 +64,9 @@ local function pushItem(name, quota)
     return
   end
 
+  -- ✅ Only attempt craft if AE2 says it's craftable
   if isCraftable(name) then
-    if requestCraft(name, quota - available, 5, 3) then
+    if requestCraft(name, quota - available) then
       log("⏳ Queued craft for " .. (quota - available) .. "x " .. name)
     else
       log("⚠ Could not queue craft for " .. name)
