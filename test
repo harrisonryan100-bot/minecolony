@@ -8,7 +8,7 @@ if not me_bridge then error("No ME Bridge found on bottom!") end
 local chest = peripheral.find("minecraft:chest") or peripheral.find("minecraft:barrel")
 if not chest then error("No chest or barrel detected!") end
 
--- Push items from AE2 to the chest
+-- Helper function to export items from AE2 to chest
 local function pushToChest(itemName, count)
     local sides = {"top","bottom","left","right","front","back"}
     for _, side in ipairs(sides) do
@@ -24,5 +24,29 @@ local function pushToChest(itemName, count)
     return 0
 end
 
--- Example: Push 10 cobblestone into the chest
-pushToChest("minecraft:cobblestone", 10)
+-- Process requests from Colony Integrator
+local function processBuilderRequests()
+    local requests = colony_integrator.getRequests()
+    if not requests or #requests == 0 then
+        print("No requests found from Colony Integrator.")
+        return
+    end
+
+    for _, req in ipairs(requests) do
+        local target = req.target
+        if string.find(target, "Builder") then -- Only handle Ezra's Builder Hut
+            for _, itemStack in ipairs(req.items) do
+                local needed = req.count
+                print("Processing request for " .. needed .. " x " .. itemStack.name)
+                local exported = pushToChest(itemStack.name, needed)
+                print("Requested: " .. needed .. ", Exported: " .. exported)
+            end
+        end
+    end
+end
+
+-- Main loop: check every 10 seconds
+while true do
+    processBuilderRequests()
+    sleep(10)
+end
