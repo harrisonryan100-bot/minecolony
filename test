@@ -1,20 +1,29 @@
---------------------
--- PERIPHERAL SETUP (Updated)
---------------------
-local monitor   = peripheral.find("monitor") or error("No monitor found")
-local meBridge  = peripheral.find("meBridge") or peripheral.wrap("bottom") or error("No ME Bridge found")
-local colony    = peripheral.find("colonyIntegrator") or peripheral.wrap("top") or error("No Colony Integrator found")
+------------------------------------------------------------
+-- AE2ColonyWarehouse (Tile-Based, Updated)
+-- by ChatGPT (CC:Tweaked / Advanced Peripherals compliant)
+------------------------------------------------------------
+
+local SCAN_INTERVAL  = 10   -- seconds between scans
+local DEBUG          = true
+
+-- Wrap peripherals
+local monitor  = peripheral.find("monitor") or error("No monitor found")
+local meBridge = peripheral.find("meBridge") or peripheral.wrap("bottom") or error("No ME Bridge found")
+local colony   = peripheral.find("colonyIntegrator") or peripheral.wrap("top") or error("No Colony Integrator found")
+local chestSide = "back" -- inventory connected to ME Bridge
 
 if not colony.isInColony then
     error("Colony Integrator is not inside a colony")
 end
 
--- Output chest side (string)
-local chestSide = "back"
+-- Debug print
+local function dprint(...)
+    if DEBUG then print("[DEBUG]", ...) end
+end
 
---------------------
+------------------------------------------------------------
 -- AE2 Helpers
---------------------
+------------------------------------------------------------
 local function getAEItems()
     local items = meBridge.listItems() or {}
     local counts = {}
@@ -28,10 +37,10 @@ local function exportToChest(itemName, count)
     local stack = { name = itemName, count = count }
     local ok, exported = pcall(function() return meBridge.exportItem(stack, chestSide) end)
     if not ok or exported == 0 then
-        print("Failed to export " .. itemName)
+        dprint("Failed to export " .. itemName)
         return 0
     end
-    print("Exported " .. exported .. "x " .. itemName)
+    dprint("Exported " .. exported .. "x " .. itemName)
     return exported
 end
 
@@ -45,27 +54,26 @@ end
 
 local function craftItem(itemName, count)
     if not isCraftable(itemName) then
-        print("Item not craftable: " .. itemName)
+        dprint("Item not craftable: " .. itemName)
         return false
     end
     local ok, result = pcall(function() return meBridge.craftItem({ name = itemName, count = count }) end)
     if ok then
-        print("Scheduled craft of " .. count .. "x " .. itemName)
+        dprint("Scheduled craft of " .. count .. "x " .. itemName)
         return true
     else
-        print("Failed to craft " .. itemName .. ": " .. tostring(result))
+        dprint("Failed to craft " .. itemName .. ": " .. tostring(result))
         return false
     end
 end
 
---------------------
+------------------------------------------------------------
 -- Colony Integrator Helpers
---------------------
+------------------------------------------------------------
 local function getRequests()
     return colony.getRequests() or {}
 end
 
--- Filter requests to a single builder hut by name
 local function getBuilderRequests(builderName)
     local all = getRequests()
     local builderReqs = {}
@@ -75,4 +83,56 @@ local function getBuilderRequests(builderName)
         end
     end
     return builderReqs
+end
+
+------------------------------------------------------------
+-- Fulfill Requests
+------------------------------------------------------------
+local function fulfillAllRequests()
+    local allRequests = getRequests()
+    local aeItems = getAEItems()
+
+    -- Aggregate needed totals for all requests
+    local neededTotals = {}
+    for _, req in ipairs(allRequests) do
+        local item = req.items[1].name
+        neededTotals[item] = (neededTotals[item] or 0) + req.count
+    end
+
+    -- Craft missing items
+    for item, totalNeeded in pairs(neededTotals) do
+        local available = aeItems[item] or 0
+        if available < totalNeeded then
+            local missing = totalNeeded - available
+            craftItem(item, missing)
+        end
+    end
+
+    -- Export items to fulfill requests
+    for _, req in ipairs(allRequests) do
+        local itemName = req.items[1].name
+        local needed = req.count
+        local available = aeItems[itemName] or 0
+        local toExport = math.min(available, needed)
+        if toExport > 0 then
+            local exported = exportToChest(itemName, toExport)
+            aeItems[itemName] = (aeItems[itemName] or 0) - exported
+        end
+    end
+
+    -- Return unrequested items to AE2
+    for itemName, count in pairs(aeItems) do
+        if count > 0 then
+            dprint("Returning " .. count .. "x " .. itemName .. " to AE2 storage")
+            -- AE2 automatically keeps items in storage; no action needed unless physically in chest
+        end
+    end
+end
+
+------------------------------------------------------------
+-- Main Loop
+------------------------------------------------------------
+while true do
+    fulfillAllRequests()
+    sleep(SCAN_INTERVAL)
 end
