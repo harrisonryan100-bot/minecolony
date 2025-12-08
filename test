@@ -1,4 +1,4 @@
 local methods = peripheral.getMethods("bottom")
-for _, m in ipairs(methods) do
-  print("Method:", m)
+for i = 1, math.min(15, #methods) do
+  print("Method:", methods[i])
 end
