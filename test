@@ -1,76 +1,75 @@
+-- Colony Integrator on TOP, ME Bridge on BOTTOM, Warehouse on LEFT
 local colony = peripheral.wrap("top")
 local me = peripheral.wrap("bottom")
+local warehouse = peripheral.wrap("left")
 
--- Computer position
-local compX, compY, compZ = 31, 62, -45
+local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
 
--- Simple log helper (prints only, no file writes)
-local function log(msg)
-    print(os.date("%H:%M:%S") .. " | " .. msg)
+-- Count items in AE2 (use getItems)
+local function getItemCount(name)
+  local items = me.getItems() or {}
+  local total = 0
+  for _, it in pairs(items) do
+    if it.name == name then total = total + (it.count or 0) end
+  end
+  return total
 end
 
--- Count items in AE2
-local function getItemCount(itemName)
-    local items = me.getItems() or {}
-    local total = 0
-    for _, item in pairs(items) do
-        if item.name == itemName then
-            total = total + (item.count or 0)
-        end
-    end
-    return total
+-- Check if item is craftable (safe wrapper)
+local function isCraftable(name)
+  local ok, result = pcall(function() return me.isItemCraftable({name=name}) end)
+  return ok and result or false
 end
 
--- Export or autocraft
-local function pullOrCraft(itemName, count)
-    local available = getItemCount(itemName)
-    if available >= count then
-        local ok = me.exportItem({name=itemName, count=count}, "left")
-        log((ok and "✔ Exported " or "✖ Failed ") .. count .. "x " .. itemName)
-        return ok
+-- Push requested items
+local function pushItem(name, quota)
+  local available = getItemCount(name)
+  if available < quota then
+    if isCraftable(name) then
+      me.craftItem({name=name, count=(quota - available)})
+      log("⏳ Queued craft for " .. (quota - available) .. "x " .. name)
+      return -- skip until next loop
     else
-        log("⏳ Crafting " .. (count - available) .. "x " .. itemName)
-        me.craftItem({name=itemName, count=(count - available)})
-        while getItemCount(itemName) < count do sleep(2) end
-        return pullOrCraft(itemName, count)
+      log("⚠ Skipping " .. name .. " (not craftable)")
+      return
     end
+  end
+  local ok = me.exportItem({name=name, count=quota}, "left")
+  log((ok and "✔ Pushed " or "✖ Failed ") .. quota .. "x " .. name)
 end
 
--- Find nearest builder hut
-local function getNearestBuilder()
-    local nearest, nearestDist = nil, math.huge
-    for _, b in ipairs(colony.getBuildings() or {}) do
-        if b.type == "builder" then
-            local x, y, z = b.location.x, b.location.y, b.location.z
-            local dist = math.sqrt((x - compX)^2 + (y - compY)^2 + (z - compZ)^2)
-            if dist < nearestDist then nearestDist, nearest = dist, b end
-        end
+-- Pull back non-requested items
+local function pullExtras(requestNames)
+  local inv = warehouse.list() or {}
+  for slot, stack in pairs(inv) do
+    if not requestNames[stack.name] then
+      me.importItem({name=stack.name, count=stack.count}, "left")
+      log("↩ Pulled back " .. stack.count .. "x " .. stack.name)
     end
-    return nearest
-end
-
--- Fulfill requests for nearest builder hut
-local function fulfillNearestBuilderRequests()
-    local nearest = getNearestBuilder()
-    if not nearest then return log("No builder huts found") end
-
-    log("🎯 Targeting hut: " .. nearest.name)
-    local requests = colony.getRequests() or {}
-    local handled = 0
-    for _, req in ipairs(requests) do
-        if req.target == nearest.name then
-            log("➡ Request for " .. req.target)
-            for _, item in ipairs(req.items or {}) do
-                pullOrCraft(item.name, item.count)
-            end
-            handled = handled + 1
-        end
-    end
-    log("Loop complete, handled " .. handled .. " requests")
+  end
 end
 
 -- Main loop
 while true do
-    fulfillNearestBuilderRequests()
-    sleep(1)
+  local requests = colony.getRequests() or {}
+  local handled = 0
+  local seen = {}
+
+  for _, req in ipairs(requests) do
+    for _, item in ipairs(req.items or {}) do
+      if not seen[item.name] then
+        -- Decide quota: stackable = 64, unstackable = 4
+        local quota = (item.maxCount and item.maxCount == 1) and 4 or 64
+        pushItem(item.name, quota)
+        seen[item.name] = true
+        handled = handled + 1
+      end
+    end
+  end
+
+  -- Pull back extras
+  pullExtras(seen)
+
+  log("Loop complete, handled " .. handled .. " unique items")
+  sleep(5)
 end
