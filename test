@@ -45,14 +45,10 @@ while true do
         end
     end
 
-    -- Fulfill requested items (with autocrafting)
+    -- Fulfill requested items
     for itemName, count in pairs(requestedItems) do
-        -- Request exact amount to be crafted from AE2
-        local exported = exportItem(itemName, count)
-        if exported < count then
-            print("Requesting autocraft for remaining " .. (count - exported) .. "x " .. itemName)
-            me_bridge.requestCraft({name=itemName, count=(count - exported)})
-        end
+        exportItem(itemName, count)
+        -- AE2 will automatically craft items if they are missing
     end
 
     -- Return unrequested items
