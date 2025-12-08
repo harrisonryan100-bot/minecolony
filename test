@@ -18,7 +18,7 @@ while true do
 
             -- Try to fulfill the request fully
             while remaining > 0 do
-                local exported = exportItem(itemName, remaining) -- use your working export function
+                local exported = exportItem(itemName, remaining) -- your working export function
                 if exported == 0 then
                     -- Could not export anything this tick, pause briefly
                     sleep(SHORT_SLEEP)
