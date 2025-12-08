@@ -1,16 +1,22 @@
 -- Wrap ME Bridge
-local me = peripheral.wrap("bottom") -- adjust side as needed
-print("Listing all methods for this peripheral:")
+local me = peripheral.wrap("bottom") -- change side if needed
+print("Methods on ME Bridge:")
+local count = 0
 for k,v in pairs(me) do
+    count = count + 1
     print(k, type(v))
+    if count >= 10 then break end -- limit output
 end
 
 -- Test listItems
 if type(me.listItems) == "function" then
+    print("Items in AE2 (up to 8 shown):")
     local items = me.listItems()
-    print("Items in AE2:")
+    local shown = 0
     for i,data in ipairs(items) do
         print(data.count, data.name)
+        shown = shown + 1
+        if shown >= 8 then break end
     end
 else
     print("listItems() not available")
