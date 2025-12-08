@@ -1,180 +1,131 @@
--- Colony Integrator on TOP, ME Bridge on BOTTOM, Chest/Barrel on RIGHT
-local colony = peripheral.wrap("top")
-if not colony then error("No Colony Integrator detected on TOP") end
-
-local me = peripheral.wrap("bottom")
-if not me then error("No ME Bridge detected on BOTTOM") end
-
-local TARGET_SIDE = "right"   -- adjust as needed
-
-local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
-
--- Safe ME call wrapper: accepts up to two arguments
-local function meSafe(name, arg1, arg2)
-  local ok, res = pcall(function() return me[name](arg1, arg2) end)
-  if not ok then
-    log("⚠ ME." .. name .. " error: " .. tostring(res))
-    return nil
-  end
-  return res
-end
-
--- AE2 helpers
-local function getItemCount(id)
-  local items = meSafe("getItems") or {}
-  local total = 0
-  for _, it in pairs(items) do
-    if it and it.name == id then
-      total = total + (it.count or 0)
-    end
-  end
-  return total
-end
-
-local function isCraftable(id)
-  local res = meSafe("isCraftable", { name = id })
-  return res == true
-end
-
--- Craft throttling
-local MIN_CRAFT_DELAY = 1.0   -- seconds between craft requests
-local MAX_CRAFTS_PER_LOOP = 6 -- cap crafts per loop
-local lastCraftTime = 0
-local craftsThisLoop = 0
-
-local function requestCraft(id, count)
-  if count <= 0 then return true end
-
-  if craftsThisLoop >= MAX_CRAFTS_PER_LOOP then
-    log("⏸ Craft cap reached this loop, skipping: " .. id .. " x" .. count)
-    return false
-  end
-
-  if not isCraftable(id) then
-    log("⚠ Uncraftable: " .. id .. " (pattern missing)")
-    return false
-  end
-
-  local now = os.clock()
-  local since = now - lastCraftTime
-  if since < MIN_CRAFT_DELAY then
-    sleep(MIN_CRAFT_DELAY - since)
-  end
-
-  local result = meSafe("craftItem", { name = id, count = count })
-  if result then
-    lastCraftTime = os.clock()
-    craftsThisLoop = craftsThisLoop + 1
-    log("🛠 Craft queued: " .. count .. "x " .. id)
-    return true
-  else
-    log("❌ craftItem failed for " .. id)
-    return false
-  end
-end
-
-local function exportItem(id, count)
-  local ok = meSafe("exportItem", { name = id, count = count }, TARGET_SIDE)
-  if ok then
-    log("✔ Exported " .. count .. "x " .. id .. " to " .. TARGET_SIDE)
-    return true
-  else
-    log("✖ Export failed for " .. id .. " (" .. count .. ")")
-    return false
-  end
-end
-
--- Push logic
-local function pushItem(id, quota)
-  local available = getItemCount(id)
-
-  if available >= quota then
-    exportItem(id, quota)
-    return
-  end
-
-  local needed = quota - available
-  if needed > 0 then
-    if requestCraft(id, needed) then
-      log("⏳ Craft queued to reach quota: " .. needed .. "x " .. id)
-    else
-      log("⚠ Could not queue craft for " .. id)
-    end
-  end
-end
-
--- Safe colony calls
-local function safeGetRequests()
-  local ok, res = pcall(function() return colony.getRequests() end)
-  if not ok then
-    log("⚠ colony.getRequests error: " .. tostring(res))
-    return {}
-  end
-  return res or {}
-end
-
-local function safeGetBuildings()
-  local ok, res = pcall(function() return colony.getBuildings() end)
-  if not ok then
-    log("⚠ colony.getBuildings error: " .. tostring(res))
-    return {}
-  end
-  return res or {}
-end
-
-local function safeGetBuilderResources(loc)
-  local ok, res = pcall(function() return colony.getBuilderResources(loc) end)
-  if not ok then
-    log("⚠ colony.getBuilderResources error: " .. tostring(res))
-    return {}
-  end
-  return res or {}
-end
-
--- Main loop with xpcall guard
-while true do
-  local ok, err = xpcall(function()
-    craftsThisLoop = 0
-
-    local handled = 0
-    local seen = {}
-
-    -- Colony-wide requests
-    for _, req in ipairs(safeGetRequests()) do
-      for _, item in ipairs(req.items or {}) do
-        local id = item.name
-        if id and not seen[id] then
-          local quota = (item.maxCount and item.maxCount == 1) and 4 or 64
-          pushItem(id, quota)
-          seen[id] = true
-          handled = handled + 1
-        end
-      end
-    end
-
-    -- Builder hut-specific requests
-    for _, b in ipairs(safeGetBuildings()) do
-      if b.type == "builder" then
-        for _, it in ipairs(safeGetBuilderResources(b.location)) do
-          local id = it.item and it.item.name
-          if id and not seen[id] then
-            local quota = it.needed or 1
-            pushItem(id, quota)
-            seen[id] = true
-            handled = handled + 1
-          end
-        end
-      end
-    end
-
-    log("Loop complete, handled " .. handled .. " unique items")
-  end, function(e)
-    return debug and debug.traceback and debug.traceback(e) or tostring(e)
-  end)
-
-  if not ok then
-    log("🔥 Top-level loop error recovered:\n" .. tostring(err))
-  end
-
-  sleep(5)
-end
+08.12 13:44:45 [Server] INFO A detailed walkthrough of the error, its code path and all known details is as follows:
+08.12 13:44:45 [Server] INFO ---------------------------------------------------------------------------------------
+08.12 13:44:45 [Server] INFO -- Head --
+08.12 13:44:45 [Server] INFO Thread: Server Watchdog
+08.12 13:44:45 [Server] INFO Stacktrace:
+08.12 13:44:45 [Server] INFO at TRANSFORMER/minecraft@1.21.1/net.minecraft.server.dedicated.ServerWatchdog.run(ServerWatchdog.java:52) ~[server-1.21.1-20240808.144430-srg.jar%23564!/:?] {re:classloading}
+08.12 13:44:45 [Server] INFO -- Thread Dump --
+08.12 13:44:45 [Server] INFO Details:
+08.12 13:44:45 [Server] INFO Threads: "Reference Handler" daemon prio=10 Id=12 RUNNABLE
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.ref.Reference.waitForReferencePendingList(Native Method)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.ref.Reference.processPendingReferences(Reference.java:246)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.ref.Reference$ReferenceHandler.run(Reference.java:208)
+08.12 13:44:45 [Server] INFO "Finalizer" daemon prio=8 Id=13 WAITING on java.lang.ref.NativeReferenceQueue$Lock@21dbdc1
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Object.wait0(Native Method)
+08.12 13:44:45 [Server] INFO -  waiting on java.lang.ref.NativeReferenceQueue$Lock@21dbdc1
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Object.wait(Object.java:366)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Object.wait(Object.java:339)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.ref.NativeReferenceQueue.await(NativeReferenceQueue.java:48)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.ref.ReferenceQueue.remove0(ReferenceQueue.java:158)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.ref.NativeReferenceQueue.remove(NativeReferenceQueue.java:89)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.ref.Finalizer$FinalizerThread.run(Finalizer.java:173)
+08.12 13:44:45 [Server] INFO "Signal Dispatcher" daemon prio=9 Id=14 RUNNABLE
+08.12 13:44:45 [Server] INFO "Common-Cleaner" daemon prio=8 Id=20 TIMED_WAITING on java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject@cda53f2
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/jdk.internal.misc.Unsafe.park(Native Method)
+08.12 13:44:45 [Server] INFO -  waiting on java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject@cda53f2
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.LockSupport.parkNanos(LockSupport.java:269)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.await(AbstractQueuedSynchronizer.java:1886)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.ref.ReferenceQueue.await(ReferenceQueue.java:71)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.ref.ReferenceQueue.remove0(ReferenceQueue.java:143)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.ref.ReferenceQueue.remove(ReferenceQueue.java:218)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/jdk.internal.ref.CleanerImpl.run(CleanerImpl.java:140)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Thread.runWith(Thread.java:1596)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Thread.run(Thread.java:1583)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/jdk.internal.misc.InnocuousThread.run(InnocuousThread.java:186)
+08.12 13:44:45 [Server] INFO "Notification Thread" daemon prio=9 Id=21 RUNNABLE
+08.12 13:44:45 [Server] INFO "JNA Cleaner" daemon prio=5 Id=33 TIMED_WAITING on java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject@8e5d6b1
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/jdk.internal.misc.Unsafe.park(Native Method)
+08.12 13:44:45 [Server] INFO -  waiting on java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject@8e5d6b1
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.LockSupport.parkNanos(LockSupport.java:269)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.await(AbstractQueuedSynchronizer.java:1886)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.ref.ReferenceQueue.await(ReferenceQueue.java:71)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.ref.ReferenceQueue.remove0(ReferenceQueue.java:143)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.ref.ReferenceQueue.remove(ReferenceQueue.java:218)
+08.12 13:44:45 [Server] INFO at MC-BOOTSTRAP/com.sun.jna@5.14.0/com.sun.jna.internal.Cleaner$CleanerThread.run(Cleaner.java:154)
+08.12 13:44:45 [Server] INFO "DFU cleaning thread" daemon prio=1 Id=34 TIMED_WAITING
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/jdk.internal.misc.Unsafe.park(Native Method)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.LockSupport.parkNanos(LockSupport.java:410)
+08.12 13:44:45 [Server] INFO at TRANSFORMER/modernfix@5.25.1+mc1.21.1/org.embeddedt.modernfix.dfu.DFUBlaster$CleanerThread.run(DFUBlaster.java:61)
+08.12 13:44:45 [Server] INFO "Timer hack thread" daemon prio=5 Id=35 TIMED_WAITING
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Thread.sleep0(Native Method)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Thread.sleep(Thread.java:509)
+08.12 13:44:45 [Server] INFO at TRANSFORMER/minecraft@1.21.1/net.minecraft.Util$7.run(Util.java:759)
+08.12 13:44:45 [Server] INFO "FileSystemWatchService" daemon prio=5 Id=47 RUNNABLE (in native)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/sun.nio.fs.LinuxWatchService.poll(Native Method)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/sun.nio.fs.LinuxWatchService$Poller.run(LinuxWatchService.java:307)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Thread.runWith(Thread.java:1596)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Thread.run(Thread.java:1583)
+08.12 13:44:45 [Server] INFO "config-file-watcher-0-0" daemon prio=5 Id=48 TIMED_WAITING on java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject@4de759c9
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/jdk.internal.misc.Unsafe.park(Native Method)
+08.12 13:44:45 [Server] INFO -  waiting on java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject@4de759c9
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.LockSupport.parkNanos(LockSupport.java:269)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.awaitNanos(AbstractQueuedSynchronizer.java:1797)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.LinkedBlockingDeque.pollFirst(LinkedBlockingDeque.java:515)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.LinkedBlockingDeque.poll(LinkedBlockingDeque.java:677)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/sun.nio.fs.AbstractWatchService.poll(AbstractWatchService.java:108)
+08.12 13:44:45 [Server] INFO at MC-BOOTSTRAP/com.electronwill.nightconfig.core@3.8.3/com.electronwill.nightconfig.core.file.FileWatcher$FsWatcher.run(FileWatcher.java:531)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Thread.runWith(Thread.java:1596)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Thread.run(Thread.java:1583)
+08.12 13:44:45 [Server] INFO "Scheduler-0" daemon prio=5 Id=49 WAITING on java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject@227b1601
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/jdk.internal.misc.Unsafe.park(Native Method)
+08.12 13:44:45 [Server] INFO -  waiting on java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject@227b1601
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.LockSupport.park(LockSupport.java:371)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode.block(AbstractQueuedSynchronizer.java:519)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ForkJoinPool.unmanagedBlock(ForkJoinPool.java:3780)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ForkJoinPool.managedBlock(ForkJoinPool.java:3725)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.await(AbstractQueuedSynchronizer.java:1746)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:1177)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:899)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ThreadPoolExecutor.getTask(ThreadPoolExecutor.java:1070)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1130)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Thread.runWith(Thread.java:1596)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Thread.run(Thread.java:1583)
+08.12 13:44:45 [Server] INFO "Scheduler-1" daemon prio=5 Id=50 WAITING on java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject@227b1601
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/jdk.internal.misc.Unsafe.park(Native Method)
+08.12 13:44:45 [Server] INFO -  waiting on java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject@227b1601
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.LockSupport.park(LockSupport.java:371)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode.block(AbstractQueuedSynchronizer.java:519)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ForkJoinPool.unmanagedBlock(ForkJoinPool.java:3780)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ForkJoinPool.managedBlock(ForkJoinPool.java:3725)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.await(AbstractQueuedSynchronizer.java:1746)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:1177)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:899)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ThreadPoolExecutor.getTask(ThreadPoolExecutor.java:1070)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1130)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Thread.runWith(Thread.java:1596)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Thread.run(Thread.java:1583)
+08.12 13:44:45 [Server] INFO "Scheduler-2" daemon prio=5 Id=51 WAITING on java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject@227b1601
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/jdk.internal.misc.Unsafe.park(Native Method)
+08.12 13:44:45 [Server] INFO -  waiting on java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject@227b1601
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.LockSupport.park(LockSupport.java:371)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode.block(AbstractQueuedSynchronizer.java:519)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ForkJoinPool.unmanagedBlock(ForkJoinPool.java:3780)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ForkJoinPool.managedBlock(ForkJoinPool.java:3725)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.await(AbstractQueuedSynchronizer.java:1746)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:1177)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:899)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ThreadPoolExecutor.getTask(ThreadPoolExecutor.java:1070)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1130)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Thread.runWith(Thread.java:1596)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.lang.Thread.run(Thread.java:1583)
+08.12 13:44:45 [Server] INFO "Scheduler-3" daemon prio=5 Id=52 WAITING on java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject@227b1601
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/jdk.internal.misc.Unsafe.park(Native Method)
+08.12 13:44:45 [Server] INFO -  waiting on java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject@227b1601
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.LockSupport.park(LockSupport.java:371)
+08.12 13:44:45 [Server] INFO at java.base@21.0.9/java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode.block(AbstractQueuedSynchronizer.java:519)
+08.12 13:44:46 [Multicraft] Skipped 1344 lines due to rate limit (160/s)
+08.12 13:44:46 [Server] INFO Note: Values below are not accurate due to -XX:+DisableExplicitGC arguments you are using
+08.12 13:44:46 [Server] INFO Leaking objects:
+08.12 13:44:46 [Server] INFO Player:
+08.12 13:44:46 [Server] INFO ServerPlayer: 1
+08.12 13:44:46 [Server] INFO Level:
+08.12 13:44:46 [Server] INFO ServerLevel: 17
+08.12 13:44:46 [Server] Server Watchdog/FATAL [ne.ne.ne.co.NeoForgeMod/]: Preparing crash report with UUID dd2be275-06c2-4e6c-b4b5-9a3bcb00f1a0
+08.12 13:44:46 [Server] Server Watchdog/ERROR This crash report has been saved to: /crash-reports/crash-2025-12-08_13.44.45-server.txt
+08.12 13:44:49 [Multicraft] Server shut down (stopping)
+08.12 13:44:49 [Multicraft] Server stopped
+08.12 13:45:20 [Multicraft] Received stop command
+08.12 13:45:20 [Multicraft] Server stopped
