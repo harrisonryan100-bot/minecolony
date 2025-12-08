@@ -1,154 +1,27 @@
--- Colony Integrator on TOP, ME Bridge on BOTTOM, Chest/Barrel on RIGHT
 local colony = peripheral.wrap("top")
-if not colony then error("No Colony Integrator detected on TOP") end
+local function log(msg) print(os.date("%H:%M:%S").." | "..msg) end
 
-local me = peripheral.wrap("bottom")
-if not me then error("No ME Bridge detected on BOTTOM") end
-
-local TARGET_SIDE = "right"
-
-local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
-
--- Netherite tool whitelist
-local netheriteTools = {
-  ["minecraft:netherite_pickaxe"] = true,
-  ["minecraft:netherite_axe"] = true,
-  ["minecraft:netherite_shovel"] = true,
-  ["minecraft:netherite_hoe"] = true,
-  ["minecraft:netherite_sword"] = true
-}
-local function isNetheriteTool(id) return netheriteTools[id] == true end
-
--- Safe ME call wrapper
-local function meSafe(name, arg1, arg2)
-  local ok, res = pcall(function() return me[name](arg1, arg2) end)
-  if not ok then
-    log("⚠ ME." .. name .. " error: " .. tostring(res))
-    return nil
-  end
-  return res
-end
-
--- AE2 helpers
-local function getItemCount(id)
-  local items = meSafe("getItems") or {}
-  local total = 0
-  for _, it in pairs(items) do
-    if it and it.name == id then total = total + (it.count or 0) end
-  end
-  return total
-end
-
-local function isCraftable(id)
-  local res = meSafe("isCraftable", { name = id })
-  return res == true
-end
-
--- Craft throttling
-local MIN_CRAFT_DELAY = 1.0
-local MAX_CRAFTS_PER_LOOP = 6
-local lastCraftTime = 0
-local craftsThisLoop = 0
-
-local function requestCraft(id, count)
-  if count <= 0 then return true end
-  if craftsThisLoop >= MAX_CRAFTS_PER_LOOP then
-    log("⏸ Craft cap reached this loop, skipping: " .. id .. " x" .. count)
-    return false
-  end
-  if not isCraftable(id) then
-    log("⚠ Uncraftable: " .. id)
-    return false
-  end
-  local now = os.clock()
-  local since = now - lastCraftTime
-  if since < MIN_CRAFT_DELAY then sleep(MIN_CRAFT_DELAY - since) end
-  local result = meSafe("craftItem", { name = id, count = count })
-  if result then
-    lastCraftTime = os.clock()
-    craftsThisLoop = craftsThisLoop + 1
-    log("🛠 Craft queued: " .. count .. "x " .. id)
-    return true
-  else
-    log("❌ craftItem failed for " .. id)
-    return false
-  end
-end
-
-local function exportItem(id, count)
-  local ok = meSafe("exportItem", { name = id, count = count }, TARGET_SIDE)
-  if ok then
-    log("✔ Exported " .. count .. "x " .. id .. " to " .. TARGET_SIDE)
-    return true
-  else
-    log("✖ Export failed for " .. id .. " (" .. count .. ")")
-    return false
-  end
-end
-
--- Push logic
-local function pushItem(id, quota)
-  local available = getItemCount(id)
-  if available >= quota then
-    exportItem(id, quota)
-    return
-  end
-  local needed = quota - available
-  if needed > 0 then
-    if requestCraft(id, needed) then
-      log("⏳ Craft queued to reach quota: " .. needed .. "x " .. id)
-    else
-      log("⚠ Could not queue craft for " .. id)
-    end
-  end
-end
-
--- Safe colony calls
 local function safeGetRequests()
-  local ok, res = pcall(function() return colony.getRequests() end)
+  local ok,res = pcall(function() return colony.getRequests() end)
   return ok and res or {}
 end
 
--- Main loop: process only builder hut requests
 while true do
-  local ok, err = xpcall(function()
-    craftsThisLoop = 0
-    local handled = 0
-    local removed = 0
-    local seen = {}
-
-    for _, req in ipairs(safeGetRequests()) do
-      local tgt = req.target or {}
-      local tname = tgt.name or (tgt.type or "unknown")
-
-      -- Only process builder huts
-      if tname:lower():find("builder") then
-        log("→ Builder hut request from: " .. tostring(tname))
-
-        for _, item in ipairs(req.items or {}) do
-          local id = item.name
-          if id and not seen[id] then
-            -- Filter: remove non-Netherite tools
-            if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
-              if not isNetheriteTool(id) then
-                log("🗑 Removed non-Netherite tool request: " .. id)
-                removed = removed + 1
-                goto continue
-              end
-            end
-            local quota = item.count or 1
-            pushItem(id, quota)
-            seen[id] = true
-            handled = handled + 1
-          end
-          ::continue::
-        end
+  local reqs = safeGetRequests()
+  log("Total requests: "..#reqs)
+  local shown = 0
+  for _,r in ipairs(reqs) do
+    local tgt = r.target or {}
+    local loc = tgt.location or {}
+    if tgt.name and tgt.name:lower():find("builder") then
+      log("Builder: "..tostring(tgt.name).." @ ("..loc.x..","..loc.y..","..loc.z..")")
+      for _,it in ipairs(r.items or {}) do
+        log("  "..it.count.."x "..it.name)
+        shown = shown+1
+        if shown>=12 then break end
       end
     end
-
-    log("Loop complete, handled " .. handled .. " items, removed " .. removed .. " non-Netherite requests")
-  end, function(e) return tostring(e) end)
-
-  if not ok then log("🔥 Loop error recovered:\n" .. tostring(err)) end
+    if shown>=12 then break end
+  end
   sleep(5)
 end
