@@ -1,63 +1,69 @@
--- Settings
-local ME_SIDE = "bottom"       -- side ME Bridge is on
-local COLONY_SIDE = "top"      -- side Colony Integrator is on
-local CHEST_SIDE = "front"     -- side chest to export items
+local colony = peripheral.wrap("top")
+local me = peripheral.wrap("bottom")
+local TARGET_SIDE = "right"
 
--- Wrap peripherals
-local meBridge = peripheral.wrap(ME_SIDE)
-if not meBridge then error("No ME Bridge detected on " .. ME_SIDE) end
+-- Netherite tool whitelist
+local netheriteTools = {
+  ["minecraft:netherite_pickaxe"]=true, ["minecraft:netherite_axe"]=true,
+  ["minecraft:netherite_shovel"]=true, ["minecraft:netherite_hoe"]=true,
+  ["minecraft:netherite_sword"]=true
+}
+local function isNetheriteTool(id) return netheriteTools[id] end
 
-local colony = peripheral.wrap(COLONY_SIDE)
-if not colony then error("No Colony Integrator detected on " .. COLONY_SIDE) end
-
--- Safe method to get items from ME Bridge
-local function getMEItems()
-    if type(meBridge.listItems) == "function" then
-        return meBridge.listItems() or {}
-    elseif type(meBridge.getItems) == "function" then
-        return meBridge.getItems() or {}
-    else
-        error("ME Bridge has no listItems or getItems method")
-    end
+-- Safe colony call
+local function safeGetRequests()
+  local ok,res = pcall(function() return colony.getRequests() end)
+  return ok and res or {}
 end
 
--- Move items to chest
-local function moveToChest(itemName, count)
-    local totalMoved = 0
-    local items = getMEItems()
-    for _, entry in ipairs(items) do
-        if entry.name == itemName then
-            local toMove = math.min(entry.count, count - totalMoved)
-            local exported = meBridge.exportItem({name=itemName, count=toMove}, CHEST_SIDE)
-            totalMoved = totalMoved + (exported or 0)
-            print("Exported " .. (exported or 0) .. "x " .. itemName .. " to chest")
-            if totalMoved >= count then break end
-        end
-    end
-    return totalMoved
+-- AE2 helpers
+local function getItemCount(id)
+  local items = me.getItems() or {}
+  local total = 0
+  for _,it in ipairs(items) do if it.name==id then total=total+(it.count or 0) end end
+  return total
 end
 
--- Main loop
+local function pushItem(id, quota)
+  local available = getItemCount(id)
+  if available >= quota then
+    me.exportItem({name=id,count=quota},TARGET_SIDE)
+    print("✔ Exported "..quota.."x "..id)
+  else
+    print("⚠ Missing "..id.." ("..available.."/"..quota..")")
+    -- optional: queue craft here if you want
+  end
+end
+
+-- Main loop: filter builder requests
 while true do
-    local requests = colony.getRequests() or {}
-    print("Found " .. #requests .. " request(s)")
-    for _, req in ipairs(requests) do
-        if req.target:match("Builder") then
-            local itemName = req.items[1].name
-            local needed = req.count
-            local available = 0
-            for _, entry in ipairs(getMEItems()) do
-                if entry.name == itemName then
-                    available = entry.count
-                    break
-                end
-            end
-            if available >= needed then
-                moveToChest(itemName, needed)
+  local reqs = safeGetRequests()
+  print("Total colony requests: "..#reqs)
+  local handled,removed = 0,0
+  for _,r in ipairs(reqs) do
+    local tgt = r.target or {}
+    local tname = tgt.name or (tgt.type or "unknown")
+    if tname:lower():find("builder") then
+      print("→ Builder request from "..tname.." ("..r.desc..")")
+      for _,it in ipairs(r.items or {}) do
+        local id = it.name
+        if id then
+          if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
+            if not isNetheriteTool(id) then
+              print("  🗑 skipped non-Netherite: "..id)
+              removed=removed+1
             else
-                print("Not enough " .. itemName .. " in ME, skipping for now")
+              pushItem(id,it.count or 1)
+              handled=handled+1
             end
+          else
+            pushItem(id,it.count or 1)
+            handled=handled+1
+          end
         end
+      end
     end
-    sleep(10)
+  end
+  print("Loop complete: handled "..handled.." items, removed "..removed.." non-Netherite")
+  sleep(10)
 end
