@@ -1,47 +1,79 @@
--- Peripheral bindings
-local top = peripheral.wrap("top")        -- colony integrator
-local bottom = peripheral.wrap("bottom")  -- me bridge
-local chest = peripheral.find("inventory") -- chest/barrel anywhere
+local colony = peripheral.wrap("top")
+local me = peripheral.wrap("bottom")
 
-if not top then error("No colony integrator on top") end
-if not bottom then error("No ME bridge on bottom") end
-if not chest then error("No output inventory found") end
+if not colony then error("Colony Integrator missing on top") end
+if not me then error("ME Bridge missing on bottom") end
 
-print("System online. Monitoring Ezra's Builder Hut...")
+-- Get integrator position
+local integratorPos = colony.getLocation()  -- {x=, y=, z=}
 
--- Export item using the method that worked earlier
-local function export(item, count)
-    local ok = bottom.exportItemToChest({name=item, count=count})
-    print("Export:", item, "x"..count, "->", ok and "OK" or "FAIL")
-    return ok
+-- Distance helper
+local function distance(a, b)
+    local dx = a.x - b.x
+    local dy = a.y - b.y
+    local dz = a.z - b.z
+    return math.sqrt(dx*dx + dy*dy + dz*dz)
 end
 
-while true do
-    local reqs = top.getRequests()
-    local ezra = {}
+-- Returns builder huts within 5 blocks
+local function getNearbyBuilders()
+    local nearby = {}
+    local buildings = colony.getBuildings()
 
-    -- filter for Ezra's builder hut
-    for _, r in ipairs(reqs) do
-        if r.target and r.target:find("Ezra") then
-            table.insert(ezra, r)
+    if not buildings then return nearby end
+
+    for _, b in pairs(buildings) do
+        if b.type == "builder" and b.location then
+            local dist = distance(integratorPos, b.location)
+            if dist <= 5 then
+                table.insert(nearby, b)
+            end
         end
     end
 
-    if #ezra == 0 then
-        print("No Ezra requests. Waiting 10s...")
-        sleep(10)
-    else
-        print("Found", #ezra, "Ezra requests. Processing...")
+    return nearby
+end
 
-        for _, r in ipairs(ezra) do
-            if r.items and #r.items > 0 then
-                local item = r.items[1].name
-                local count = r.items[1].count
-                export(item, count)
+-- Pull ALL requests from colony first
+local function getAllRequests()
+    local reqs = {}
+    local all = colony.getRequests()
+
+    if not all then return reqs end
+
+    for _, r in pairs(all) do
+        table.insert(reqs, r)
+    end
+
+    return reqs
+end
+
+-- Get requests specifically for Ezra (only nearby builders)
+local function getEzraRequests()
+    local nearbyBuilders = getNearbyBuilders()
+    local allRequests = getAllRequests()
+    local ezraReqs = {}
+
+    for _, req in ipairs(allRequests) do
+        for _, b in ipairs(nearbyBuilders) do
+            if req.target == b.id or req.buildingId == b.id or req.builderId == b.id then
+                table.insert(ezraReqs, req)
             end
         end
+    end
 
-        -- short delay between cycles
-        sleep(1)
+    return ezraReqs
+end
+
+-- Main loop
+while true do
+    local ezraRequests = getEzraRequests()
+
+    if #ezraRequests > 0 then
+        print("Ezra has " .. #ezraRequests .. " requests nearby.")
+        -- Process them here…
+    else
+        print("No nearby Ezra requests. Scanning in 10 seconds...")
+        sleep(10)
     end
 end
