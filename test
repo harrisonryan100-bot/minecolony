@@ -1,56 +1,42 @@
--- Wrap peripherals
-local colony_integrator = peripheral.wrap("top")  -- Integrator on top
-local me_bridge        = peripheral.wrap("bottom") -- ME Bridge on bottom
-local chest            = peripheral.wrap("back")   -- Chest on back
+local colony_integrator = peripheral.wrap("top")
+local me_bridge        = peripheral.wrap("bottom")
+local chest_side       = "back"  -- side of the chest
 
-if not colony_integrator then error("No Colony Integrator found on top!") end
-if not me_bridge then error("No ME Bridge found on bottom!") end
-if not chest then error("No chest found on back!") end
+if not colony_integrator then error("No Colony Integrator on top!") end
+if not me_bridge then error("No ME Bridge on bottom!") end
 
--- Helper: Export items from ME Bridge to chest
+-- Export requested items
 local function exportItem(itemName, count)
-    local exported = me_bridge.exportItem({name=itemName, count=count}, chest) -- pass peripheral
-    if exported > 0 then
-        print("Exported " .. exported .. "x " .. itemName .. " to chest.")
-    else
-        print("Failed to export " .. itemName)
-    end
+    local exported = me_bridge.exportItem({name=itemName, count=count}, chest_side)
+    print("Exported " .. exported .. "x " .. itemName)
     return exported
 end
 
--- Helper: Return items from chest to AE2 if not requested
+-- Return unrequested items to AE2
 local function returnUnrequested(requestedItems)
-    local stored = chest.list() or {}
-    for slot, item in pairs(stored) do
-        local name = item.name
-        if not requestedItems[name] then
-            local returned = me_bridge.exportItem({name=name, count=item.count}, me_bridge) -- return to AE2
-            if returned > 0 then
-                print("Returned " .. returned .. "x " .. name .. " to AE2 storage.")
-            end
+    local items = peripheral.call(chest_side, "list") or {}
+    for slot, item in pairs(items) do
+        if not requestedItems[item.name] then
+            local returned = me_bridge.exportItem({name=item.name, count=item.count}, "bottom") -- back to AE2
+            print("Returned " .. returned .. "x " .. item.name)
         end
     end
 end
 
--- Main loop
 while true do
     local requests = colony_integrator.getRequests() or {}
-
-    -- Build a table of requested items (exact counts)
     local requestedItems = {}
+
     for _, req in ipairs(requests) do
         for _, item in ipairs(req.items) do
             requestedItems[item.name] = (requestedItems[item.name] or 0) + req.count
         end
     end
 
-    -- Fulfill requested items
     for itemName, count in pairs(requestedItems) do
         exportItem(itemName, count)
     end
 
-    -- Return unrequested items
     returnUnrequested(requestedItems)
-
     sleep(10)
 end
