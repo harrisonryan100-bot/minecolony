@@ -1,36 +1,32 @@
 print("=== Peripheral Check ===")
 
--- List connected peripherals
-for i, name in ipairs(peripheral.getNames()) do
-    print(i, name, peripheral.getType(name))
-end
-
--- Wrap ME Bridge and Colony Integrator
 local meBridge = peripheral.wrap("bottom")
 local colony = peripheral.wrap("top")
 
--- ME Bridge summary
 if meBridge then
     print("ME Bridge detected on bottom")
-    local funcs = {}
-    for k, v in pairs(meBridge) do if type(v) == "function" then table.insert(funcs, k) end end
-    print("Functions available:", table.concat(funcs, ", "))
+    print("Available functions:")
+    for k,v in pairs(meBridge) do if type(v)=="function" then print("  "..k) end end
 
-    local items = meBridge.listItems() or {}
-    print("Total items in network:", #items)
-    for i = 1, math.min(5, #items) do
-        print(string.format("  %dx %s", items[i].count or 0, items[i].name or "unknown"))
+    local itemsFunc = meBridge.getItems or meBridge.getItemList
+    if itemsFunc then
+        local items = itemsFunc()
+        print("Items in AE2:", #items)
+        for i=1, math.min(5,#items) do
+            print(string.format("  %dx %s", items[i].count or 0, items[i].name or "unknown"))
+        end
+    else
+        print("No function to list items available")
     end
 else
     print("ME Bridge not detected on bottom")
 end
 
--- Colony Integrator summary
 if colony then
     print("Colony Integrator detected on top")
     local requests = colony.getRequests() or {}
     print("Requests found:", #requests)
-    for i = 1, math.min(5, #requests) do
+    for i=1, math.min(5,#requests) do
         local r = requests[i]
         local name = r.items and r.items[1] and r.items[1].name or "unknown"
         print(string.format("  %s x%d -> %s", name, r.count or 0, r.target or "unknown"))
