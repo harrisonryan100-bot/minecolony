@@ -1,9 +1,27 @@
-local integrator = peripheral.wrap("top")
-local requests = integrator.getRequests()
+while true do
+    print("Scanning requests...")
 
-for i, r in ipairs(requests) do
-    print("---- REQUEST #"..i.." ----")
-    for k, v in pairs(r) do
-        print(k, textutils.serialize(v))
+    local all = colony_integrator.getRequests()
+    local ezraRequests = {}
+
+    for _, req in ipairs(all) do
+        if isEzraRequest(req) then
+            table.insert(ezraRequests, req)
+        end
+    end
+
+    if #ezraRequests == 0 then
+        print("No Ezra requests. Waiting 10s...")
+        sleep(10)
+    else
+        print("Found "..#ezraRequests.." Ezra requests.")
+
+        for _, req in ipairs(ezraRequests) do
+            local item = req.item
+            local needed = req.count or req.min or 1
+
+            print("Attempting to fulfill: "..item.." x"..needed)
+            exportFromME(item, needed, chestSide)   -- the export method you confirmed works
+        end
     end
 end
