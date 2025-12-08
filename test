@@ -1,29 +1,3 @@
-local colony_integrator = peripheral.wrap("top")  -- Integrator
-local me_bridge = peripheral.wrap("bottom")       -- AE2 Bridge
-local chest = peripheral.wrap("left")             -- Output chest
-
-if not colony_integrator or not me_bridge or not chest then
-    error("Missing required peripherals")
-end
-
-while true do
-    local allRequests = colony_integrator.getRequests() or {}
-
-    -- Build a list of items requested for Builder's Hut only
-    local builderRequests = {}
-    for _, req in ipairs(allRequests) do
-        if req.target == "Builder's Hut" then
-            local itemName = req.items[1].name
-            builderRequests[itemName] = (builderRequests[itemName] or 0) + req.count
-        end
-    end
-
-    -- Export each requested item from AE2 to the chest
-    for itemName, count in pairs(builderRequests) do
-        local exported = me_bridge.exportItem({name=itemName, count=count}, "left")  -- assuming chest is on left
-        print("Exported", exported, "of", itemName, "to chest")
-    end
-
-    -- Pause before next scan
-    sleep(10)
-end
+print("Top peripheral:", peripheral.getType("top"))
+print("Bottom peripheral:", peripheral.getType("bottom"))
+print("Left peripheral:", peripheral.getType("left"))
