@@ -1,22 +1,3 @@
-local function requestCraftTracked(name, count, attempts, delay)
-  attempts = attempts or 5
-  delay = delay or 3
-  for i = 1, attempts do
-    local ok, ret = pcall(function() return me.craftItem({name=name, count=count}) end)
-    if ok and ret then
-      -- confirm jobs
-      local jobs = me.getCraftingJobs() or {}
-      for _, j in ipairs(jobs) do
-        if j.item and j.item.name == name then
-          log(("🛠 Job accepted (%dx %s) on attempt %d"):format(count, name, i))
-          return true
-        end
-      end
-      log(("⌛ Craft requested but not visible yet (%dx %s), attempt %d"):format(count, name, i))
-    else
-      log(("❌ craftItem failed (%dx %s), attempt %d"):format(count, name, i))
-    end
-    sleep(delay)
-  end
-  return false
+for _, name in ipairs(peripheral.getNames()) do
+  print("Peripheral:", name)
 end
