@@ -5,11 +5,11 @@ if not colony then error("No Colony Integrator detected on TOP") end
 local me = peripheral.wrap("bottom")
 if not me then error("No ME Bridge detected on BOTTOM") end
 
-local TARGET_SIDE = "right"   -- side of chest/barrel attached to ME Bridge
+local TARGET_SIDE = "right"
 
 local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
 
--- Count items in AE2
+-- AE2 helpers
 local function getItemCount(name)
   local items = me.getItems() or {}
   local total = 0
@@ -19,23 +19,19 @@ local function getItemCount(name)
   return total
 end
 
--- Check if item is craftable
 local function isCraftable(name)
   local ok, result = pcall(function() return me.isCraftable({name=name}) end)
   return ok and result or false
 end
 
--- Request autocrafting safely
 local function requestCraft(name, count)
   if not isCraftable(name) then
     log("⚠ Skipping uncraftable item: " .. name)
     return false
   end
-
   local ok, result = pcall(function()
     return me.craftItem({name=name, count=count})
   end)
-
   if ok and result then
     log("🛠 Craft queued: " .. count .. "x " .. name)
     return true
@@ -45,16 +41,13 @@ local function requestCraft(name, count)
   end
 end
 
--- Push requested items into the adjacent inventory
 local function pushItem(name, quota)
   local available = getItemCount(name)
-
   if available >= quota then
     local ok = me.exportItem({name=name, count=quota}, TARGET_SIDE)
     log((ok and "✔ Pushed " or "✖ Failed ") .. quota .. "x " .. name .. " to " .. TARGET_SIDE)
     return
   end
-
   if requestCraft(name, quota - available) then
     log("⏳ Queued craft for " .. (quota - available) .. "x " .. name)
   else
@@ -62,19 +55,38 @@ local function pushItem(name, quota)
   end
 end
 
--- Main loop
+-- Main loop: colony + builder huts
 while true do
-  local requests = colony.getRequests() or {}
   local handled = 0
   local seen = {}
 
+  -- Colony-wide requests
+  local requests = colony.getRequests() or {}
   for _, req in ipairs(requests) do
     for _, item in ipairs(req.items or {}) do
-      if not seen[item.name] then
+      local id = item.name
+      if id and not seen[id] then
         local quota = (item.maxCount and item.maxCount == 1) and 4 or 64
-        pushItem(item.name, quota)
-        seen[item.name] = true
+        pushItem(id, quota)
+        seen[id] = true
         handled = handled + 1
+      end
+    end
+  end
+
+  -- Builder hut-specific requests
+  local buildings = colony.getBuildings() or {}
+  for _, b in ipairs(buildings) do
+    if b.type == "builder" then
+      local hutRequests = colony.getBuilderResources(b.location) or {}
+      for _, item in ipairs(hutRequests) do
+        local id = item.item and item.item.name
+        if id and not seen[id] then
+          local quota = item.needed or 1
+          pushItem(id, quota)
+          seen[id] = true
+          handled = handled + 1
+        end
       end
     end
   end
