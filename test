@@ -1,37 +1,15 @@
---------------------
--- SETTINGS
---------------------
-local SCAN_INTERVAL = 10  -- seconds to wait before checking for new requests
-local SHORT_SLEEP   = 0.1 -- seconds to pause if export partially fails
+-- Assign peripherals by side
+local colony_integrator = peripheral.wrap("top")
+local me_bridge = peripheral.wrap("bottom")
 
---------------------
--- MAIN LOOP
---------------------
-while true do
-    local requests = colony_integrator.getRequests()
-    for _, req in ipairs(requests) do
-        -- Only handle Builder Ezra's requests
-        if req.target == "Builder Ezra P. Barrett" then
-            local itemName = req.items[1].name
-            local remaining = req.count
-            print("Processing request:", itemName, "x" .. remaining)
+if colony_integrator then
+    print("Colony Integrator detected on top!")
+else
+    print("No Colony Integrator found on top!")
+end
 
-            -- Try to fulfill the request fully
-            while remaining > 0 do
-                local exported = exportItem(itemName, remaining) -- your working export function
-                if exported == 0 then
-                    -- Could not export anything this tick, pause briefly
-                    sleep(SHORT_SLEEP)
-                else
-                    remaining = remaining - exported
-                    print("Exported", exported, "of", itemName, "remaining:", remaining)
-                end
-            end
-            print("Finished request for", itemName)
-        end
-    end
-
-    -- Wait before checking for new requests
-    print("All requests processed. Waiting", SCAN_INTERVAL, "seconds before next scan...")
-    sleep(SCAN_INTERVAL)
+if me_bridge then
+    print("ME Bridge detected on bottom!")
+else
+    print("No ME Bridge found on bottom!")
 end
