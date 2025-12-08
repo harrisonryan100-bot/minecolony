@@ -5,7 +5,7 @@ local warehouse = peripheral.wrap("left")
 
 local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
 
--- Count items in AE2 (use getItems in your build)
+-- Count items in AE2
 local function getItemCount(name)
   local items = me.getItems() or {}
   local total = 0
@@ -15,7 +15,7 @@ local function getItemCount(name)
   return total
 end
 
--- Check if item is craftable (safe wrapper)
+-- Check if item is craftable
 local function isCraftable(name)
   local ok, result = pcall(function() return me.isItemCraftable({name=name}) end)
   return ok and result or false
@@ -25,14 +25,12 @@ end
 local function pushItem(name, quota)
   local available = getItemCount(name)
 
-  -- Case 1: Already have enough in AE2 → export directly
   if available >= quota then
     local ok = me.exportItem({name=name, count=quota}, "left")
     log((ok and "✔ Pushed " or "✖ Failed ") .. quota .. "x " .. name)
     return
   end
 
-  -- Case 2: Not enough → check craftability
   if isCraftable(name) then
     me.craftItem({name=name, count=(quota - available)})
     log("⏳ Queued craft for " .. (quota - available) .. "x " .. name)
@@ -41,19 +39,7 @@ local function pushItem(name, quota)
   end
 end
 
--- Pull back non-requested items (safe version)
-local function pullExtras(requestNames)
-  local invSize = warehouse.size()
-  for slot = 1, invSize do
-    local stack = warehouse.getItemDetail(slot)
-    if stack and not requestNames[stack.name] then
-      me.importItem({name=stack.name, count=stack.count}, "left")
-      log("↩ Pulled back " .. stack.count .. "x " .. stack.name)
-    end
-  end
-end
-
--- Main loop
+-- Main loop (push only)
 while true do
   local requests = colony.getRequests() or {}
   local handled = 0
@@ -62,7 +48,6 @@ while true do
   for _, req in ipairs(requests) do
     for _, item in ipairs(req.items or {}) do
       if not seen[item.name] then
-        -- Decide quota: stackable = 64, unstackable = 4
         local quota = (item.maxCount and item.maxCount == 1) and 4 or 64
         pushItem(item.name, quota)
         seen[item.name] = true
@@ -70,9 +55,6 @@ while true do
       end
     end
   end
-
-  -- Pull back extras
-  pullExtras(seen)
 
   log("Loop complete, handled " .. handled .. " unique items")
   sleep(5)
