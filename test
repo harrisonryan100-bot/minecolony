@@ -14,6 +14,18 @@ local function safeGetRequests()
   return ok and res or {}
 end
 
+local function pushItem(id, quota)
+  local items = me.getItems() or {}
+  local count = 0
+  for _,it in ipairs(items) do if it.name==id then count=count+(it.count or 0) end end
+  if count >= quota then
+    me.exportItem({name=id,count=quota},TARGET_SIDE)
+    print("✔ Exported "..quota.."x "..id)
+  else
+    print("⚠ Missing "..id.." ("..count.."/"..quota..")")
+  end
+end
+
 while true do
   local reqs = safeGetRequests()
   print("Total colony requests: "..#reqs)
@@ -29,10 +41,10 @@ while true do
             if not isNetheriteTool(id) then
               print("  skipped non-Netherite: "..id)
             else
-              print("  "..it.count.."x "..id.." (Netherite OK)")
+              pushItem(id,it.count or 1)
             end
           else
-            print("  "..it.count.."x "..id)
+            pushItem(id,it.count or 1)
           end
         end
       end
