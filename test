@@ -9,7 +9,7 @@ local TARGET_SIDE = "right"
 
 local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
 
--- Ezra's builder hut location (updated coordinates)
+-- Ezra's builder hut location (hard-coded)
 local ezraHut = { x = 31, y = 64, z = -45, dimension = "minecraft:overworld" }
 
 -- Netherite tool whitelist
@@ -107,41 +107,44 @@ local function pushItem(id, quota)
 end
 
 -- Safe colony calls
-local function safeGetBuilderResources(loc)
-  local ok, res = pcall(function() return colony.getBuilderResources(loc) end)
+local function safeGetRequests()
+  local ok, res = pcall(function() return colony.getRequests() end)
   return ok and res or {}
 end
 
--- Main loop: Ezra’s hut only
+-- Main loop: filter requests for Ezra’s hut
 while true do
   local ok, err = xpcall(function()
     craftsThisLoop = 0
     local handled = 0
     local seen = {}
 
-    -- Always check Ezra's hut resources
-    local resources = safeGetBuilderResources(ezraHut)
-    if #resources > 0 then
-      log("Ezra's hut has active requests")
-      for _, it in ipairs(resources) do
-        local id = it.item and it.item.name
-        if id and not seen[id] then
-          -- Filter: remove non-Netherite tools
-          if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
-            if not isNetheriteTool(id) then
-              log("🗑 Removed non-Netherite tool request from Ezra's hut: " .. id)
-              goto continue
+    for _, req in ipairs(safeGetRequests()) do
+      -- Match target location to Ezra's hut
+      local tgt = req.target or {}
+      if tgt.location 
+         and tgt.location.x == ezraHut.x 
+         and tgt.location.y == ezraHut.y 
+         and tgt.location.z == ezraHut.z then
+
+        for _, item in ipairs(req.items or {}) do
+          local id = item.name
+          if id and not seen[id] then
+            -- Filter: remove non-Netherite tools
+            if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
+              if not isNetheriteTool(id) then
+                log("🗑 Removed non-Netherite tool request from Ezra's hut: " .. id)
+                goto continue
+              end
             end
+            local quota = item.count or 1
+            pushItem(id, quota)
+            seen[id] = true
+            handled = handled + 1
           end
-          local quota = it.needed or 1
-          pushItem(id, quota)
-          seen[id] = true
-          handled = handled + 1
+          ::continue::
         end
-        ::continue::
       end
-    else
-      log("Ezra's hut has no resource requests")
     end
 
     log("Loop complete, handled " .. handled .. " unique items for Ezra")
