@@ -1,46 +1,48 @@
--- Peripherals
-local colony_integrator = peripheral.wrap("top")    -- Integrator on top
-local me_bridge = peripheral.wrap("bottom")        -- ME Bridge on bottom
+-- Safely wrap peripherals
+local colony_integrator = peripheral.find("colonyIntegrator")
+if not colony_integrator then error("No colony integrator found on top") end
+
+local me_bridge = peripheral.find("meBridge")
+if not me_bridge then error("No ME Bridge found on bottom") end
+
 local chest = peripheral.find("minecraft:chest") or peripheral.find("minecraft:barrel")
 if not chest then error("No chest or barrel found") end
 
--- Settings
-local SCAN_INTERVAL = 10 -- seconds between scans
+local SCAN_INTERVAL = 10
 
--- Helper to print debug
 local function dprint(...)
     print("[DEBUG]", ...)
 end
 
--- Export an item from ME Bridge to the chest
+-- Export from ME Bridge to chest using tested method
 local function exportItemToChest(itemName, count)
-    local itemStack = { name = itemName, count = count }
+    local stack = { name = itemName, count = count }
     local sides = {"top", "bottom", "left", "right", "front", "back"}
     for _, side in ipairs(sides) do
         local ok, result = pcall(function()
-            return me_bridge.exportItem(itemStack, side)
+            return me_bridge.exportItem(stack, side)
         end)
         if ok and type(result) == "number" and result > 0 then
             dprint("Exported " .. result .. "/" .. count .. " of " .. itemName .. " to side " .. side)
             return result
         end
     end
-    dprint("Failed to export " .. itemName .. ": no output inventory found")
+    dprint("Failed to export " .. itemName)
     return 0
 end
 
--- Process requests for Ezra's Builder Hut
+-- Process Ezra's requests
 local function fulfillEzraRequests()
-    if not colony_integrator.isInColony() then
-        dprint("Colony integrator not in colony")
+    local requests = colony_integrator.getRequests()
+    if not requests then
+        dprint("No requests returned from colony integrator")
         return
     end
 
-    local requests = colony_integrator.getRequests()
-    if not requests then return end
-
+    local found = false
     for _, req in ipairs(requests) do
         if req.target == "Builder Ezra P. Barrett" then
+            found = true
             local itemName = req.items[1].name
             local needed = req.count
             local exported = exportItemToChest(itemName, needed)
@@ -50,6 +52,9 @@ local function fulfillEzraRequests()
                 print("Could not export " .. itemName)
             end
         end
+    end
+    if not found then
+        dprint("No requests found for Ezra this cycle")
     end
 end
 
