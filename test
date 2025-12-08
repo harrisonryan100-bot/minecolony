@@ -13,25 +13,31 @@ local function isNetheriteTool(id) return netheriteTools[id] end
 -- Safe colony call
 local function safeGetRequests()
   local ok,res = pcall(function() return colony.getRequests() end)
-  return ok and res or {}
+  if not ok then print("⚠ getRequests() error:",res) return {} end
+  return res or {}
 end
 
 -- AE2 helpers
 local function getItemCount(id)
   local items = me.getItems() or {}
   local total = 0
-  for _,it in ipairs(items) do if it.name==id then total=total+(it.count or 0) end end
+  for _,it in ipairs(items) do
+    if it and it.name==id then total=total+(it.count or 0) end
+  end
   return total
 end
 
 local function pushItem(id, quota)
+  print("→ Attempting to fulfill "..quota.."x "..id)
   local available = getItemCount(id)
+  print("   AE2 reports "..available.." available")
   if available >= quota then
     local ok = me.exportItem({name=id,count=quota},TARGET_SIDE)
-    print("✔ "..quota.."x "..id.." exported (result="..tostring(ok)..")")
+    print("   Export result="..tostring(ok))
+    return ok
   else
-    print("⚠ "..id.." missing ("..available.."/"..quota..")")
-    -- optional: queue craft here if desired
+    print("   Not enough stock ("..available.."/"..quota..")")
+    return false
   end
 end
 
@@ -44,23 +50,23 @@ while true do
     local tgt = r.target or {}
     local tname = tgt.name or (tgt.type or "unknown")
     if tname:lower():find("builder") then
-      print("→ Builder request from "..tname.." ("..r.desc..")")
+      print("Builder request from "..tname.." ("..r.desc..")")
       for _,it in ipairs(r.items or {}) do
         local id = it.name
+        local quota = it.count or 1
         if id then
-          -- Tool filter
           if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
             if not isNetheriteTool(id) then
-              print("  🗑 skipped non-Netherite: "..id)
+              print("   🗑 skipped non-Netherite tool: "..id)
               removed=removed+1
             else
-              pushItem(id,it.count or 1)
-              handled=handled+1
+              if pushItem(id,quota) then handled=handled+1 end
             end
           else
-            pushItem(id,it.count or 1)
-            handled=handled+1
+            if pushItem(id,quota) then handled=handled+1 end
           end
+        else
+          print("   ⚠ item missing name field")
         end
       end
     end
