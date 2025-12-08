@@ -1,5 +1,9 @@
 -- Colony Integrator on TOP, ME Bridge on BOTTOM, Warehouse on LEFT
 local colony = peripheral.wrap("top")
+if not colony then
+  error("No Colony Integrator detected on TOP — check placement!")
+end
+
 local me = peripheral.wrap("bottom")
 local warehouse = peripheral.wrap("left")
 
@@ -39,7 +43,7 @@ local function pushItem(name, quota)
   end
 end
 
--- Main loop (push only)
+-- Main loop (push only, no warehouse scan)
 while true do
   local requests = colony.getRequests() or {}
   local handled = 0
