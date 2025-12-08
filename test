@@ -1,27 +1,23 @@
 local colony = peripheral.wrap("top")
 local function log(msg) print(os.date("%H:%M:%S").." | "..msg) end
 
-local function safeGetRequests()
-  local ok,res = pcall(function() return colony.getRequests() end)
+local function safeGetWorkOrders()
+  local ok,res = pcall(function() return colony.getWorkOrders() end)
+  return ok and res or {}
+end
+local function safeGetWorkOrderResources(id)
+  local ok,res = pcall(function() return colony.getWorkOrderResources(id) end)
   return ok and res or {}
 end
 
 while true do
-  local reqs = safeGetRequests()
-  log("Total requests: "..#reqs)
-  local shown = 0
-  for _,r in ipairs(reqs) do
-    local tgt = r.target or {}
-    local loc = tgt.location or {}
-    if tgt.name and tgt.name:lower():find("builder") then
-      log("Builder: "..tostring(tgt.name).." @ ("..loc.x..","..loc.y..","..loc.z..")")
-      for _,it in ipairs(r.items or {}) do
-        log("  "..it.count.."x "..it.name)
-        shown = shown+1
-        if shown>=12 then break end
-      end
+  local orders = safeGetWorkOrders()
+  log("WorkOrders: "..#orders)
+  for _,wo in ipairs(orders) do
+    log("WO "..wo.id.." builder="..tostring(wo.builder).." building="..tostring(wo.buildingName))
+    for _,res in ipairs(safeGetWorkOrderResources(wo.id)) do
+      log("  "..res.needed.."x "..res.item.name.." ("..res.status..")")
     end
-    if shown>=12 then break end
   end
-  sleep(5)
+  sleep(10)
 end
