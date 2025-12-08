@@ -1,11 +1,13 @@
--- Colony Integrator on TOP, ME Bridge on BOTTOM, Warehouse on LEFT
+-- Colony Integrator on TOP, ME Bridge on BOTTOM, Chest/Barrel on RIGHT
 local colony = peripheral.wrap("top")
 if not colony then
   error("No Colony Integrator detected on TOP — check placement!")
 end
 
 local me = peripheral.wrap("bottom")
-local warehouse = peripheral.wrap("left")
+
+-- set the side of the ME Bridge where your chest/barrel is attached
+local TARGET_SIDE = "right"   -- change to "top", "bottom", "left", etc. as needed
 
 local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
 
@@ -25,13 +27,13 @@ local function isCraftable(name)
   return ok and result or false
 end
 
--- Push requested items
+-- Push requested items into the adjacent inventory
 local function pushItem(name, quota)
   local available = getItemCount(name)
 
   if available >= quota then
-    local ok = me.exportItem({name=name, count=quota}, "left")
-    log((ok and "✔ Pushed " or "✖ Failed ") .. quota .. "x " .. name)
+    local ok = me.exportItem({name=name, count=quota}, TARGET_SIDE)
+    log((ok and "✔ Pushed " or "✖ Failed ") .. quota .. "x " .. name .. " to " .. TARGET_SIDE)
     return
   end
 
@@ -43,7 +45,7 @@ local function pushItem(name, quota)
   end
 end
 
--- Main loop (push only, no warehouse scan)
+-- Main loop (push only)
 while true do
   local requests = colony.getRequests() or {}
   local handled = 0
