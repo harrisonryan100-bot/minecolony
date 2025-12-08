@@ -1,53 +1,11 @@
 local colony = peripheral.wrap("top")
-local me = peripheral.wrap("bottom")
-local TARGET_SIDE = "right"
-
-local netheriteTools = {
-  ["minecraft:netherite_pickaxe"]=true, ["minecraft:netherite_axe"]=true,
-  ["minecraft:netherite_shovel"]=true, ["minecraft:netherite_hoe"]=true,
-  ["minecraft:netherite_sword"]=true
-}
-local function isNetheriteTool(id) return netheriteTools[id] end
-
-local function safeGetRequests()
-  local ok,res = pcall(function() return colony.getRequests() end)
-  return ok and res or {}
-end
-
-local function pushItem(id, quota)
-  local items = me.getItems() or {}
-  local count = 0
-  for _,it in ipairs(items) do if it.name==id then count=count+(it.count or 0) end end
-  if count >= quota then
-    me.exportItem({name=id,count=quota},TARGET_SIDE)
-    print("✔ Exported "..quota.."x "..id)
-  else
-    print("⚠ Missing "..id.." ("..count.."/"..quota..")")
-  end
-end
-
 while true do
-  local reqs = safeGetRequests()
-  print("Total colony requests: "..#reqs)
-  for _,r in ipairs(reqs) do
-    local tgt = r.target or {}
-    local tname = tgt.name or (tgt.type or "unknown")
-    if tname:lower():find("builder") then
-      print("Builder request from "..tname)
-      for _,it in ipairs(r.items or {}) do
-        local id = it.name
-        if id then
-          if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
-            if not isNetheriteTool(id) then
-              print("  skipped non-Netherite: "..id)
-            else
-              pushItem(id,it.count or 1)
-            end
-          else
-            pushItem(id,it.count or 1)
-          end
-        end
-      end
+  local ok,reqs = pcall(function() return colony.getRequests() end)
+  if not ok then print("getRequests() error") else
+    print("Total requests: "..#reqs)
+    for i,r in ipairs(reqs) do
+      print(i, r.desc, r.state, r.count, r.target and r.target.name)
+      if i>=10 then break end
     end
   end
   sleep(10)
