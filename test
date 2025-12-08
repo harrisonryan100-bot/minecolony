@@ -1,11 +1,132 @@
-local side = "back" -- the side your chest is on
-if not peripheral.isPresent(side) then
-    error("No peripheral found on " .. side)
+--------------------
+-- USER SETTINGS
+--------------------
+local SCAN_INTERVAL = 10 -- seconds between scans
+local DEBUG = true
+
+--------------------
+-- HELPER FUNCTIONS
+--------------------
+local function dprint(...)
+    if DEBUG then print("[DEBUG]", ...) end
 end
 
-local p = peripheral.wrap(side)
-print("Peripheral type:", peripheral.getType(side))
-print("Peripheral methods:")
-for k,v in pairs(p) do
-    print("-", k, type(v))
+local function safePeripheralCall(periph, method, ...)
+    if type(periph[method]) ~= "function" then
+        dprint("Method " .. method .. " not available on peripheral")
+        return nil, "Method " .. method .. " not available"
+    end
+    local ok, result = pcall(periph[method], periph, ...)
+    if not ok then
+        dprint("Error calling " .. method .. ": " .. tostring(result))
+        return nil, result
+    end
+    return result, nil
+end
+
+--------------------
+-- PERIPHERAL SETUP
+--------------------
+local monitor = peripheral.find("monitor")
+if monitor then monitor.clear() end
+
+local me_bridge = peripheral.find("meBridge")
+if not me_bridge then error("No ME Bridge found!") end
+
+local colony_integrator = peripheral.find("colonyIntegrator")
+if not colony_integrator then error("No Colony Integrator found!") end
+
+--------------------
+-- AUTO-DETECT OUTPUT INVENTORY
+--------------------
+local function detectOutputInventory()
+    local sides = {"top","bottom","left","right","front","back"}
+    for _, side in ipairs(sides) do
+        local inv = peripheral.wrap(side)
+        if inv and type(inv.list) == "function" then
+            dprint("Inventory detected on side:", side)
+            return side, inv
+        end
+    end
+    dprint("No adjacent inventory detected!")
+    return nil, nil
+end
+
+local output_side, output_inv = detectOutputInventory()
+if not output_side then error("No output inventory detected next to ME Bridge!") end
+
+--------------------
+-- EXPORT FUNCTION
+--------------------
+local function exportItem(stack)
+    local itemStack = {name=stack.name, count=stack.count or 1}
+    local exported = safePeripheralCall(me_bridge, "exportItem", itemStack, output_side)
+    if exported and exported > 0 then
+        dprint("Exported", exported, "of", stack.name, "to", output_side)
+        return exported
+    else
+        dprint("Failed to export", stack.name)
+        return 0
+    end
+end
+
+--------------------
+-- CRAFTING FUNCTION
+--------------------
+local function craftItem(stack)
+    if type(me_bridge.craftItem) == "function" then
+        local ok, result = safePeripheralCall(me_bridge, "craftItem", {name=stack.name, count=stack.count or 1})
+        if ok then
+            dprint("Crafted", stack.count or 1, stack.name)
+            return true
+        else
+            dprint("Craft failed for", stack.name)
+            return false
+        end
+    else
+        dprint("craftItem not supported on ME Bridge")
+        return false
+    end
+end
+
+--------------------
+-- PROCESS COLONY REQUESTS
+--------------------
+local function processRequests()
+    local requests = colony_integrator.getRequests()
+    if not requests then return end
+
+    for _, req in ipairs(requests) do
+        local itemName = req.items[1].name
+        local needed = req.count
+        -- Check AE2 stock
+        local ae_items = me_bridge.listItems() or {}
+        local have = 0
+        for _, data in ipairs(ae_items) do
+            if data.name == itemName then have = data.count end
+        end
+
+        local to_export = math.min(have, needed)
+        if to_export > 0 then
+            local exported = exportItem({name=itemName, count=to_export})
+            needed = needed - exported
+        end
+
+        -- Craft missing items if possible
+        if needed > 0 then
+            if craftItem({name=itemName, count=needed}) then
+                dprint("Scheduled crafting of", needed, itemName)
+            else
+                dprint("Unable to fulfill request for", itemName)
+            end
+        end
+    end
+end
+
+--------------------
+-- MAIN LOOP
+--------------------
+while true do
+    processRequests()
+    sleep(SCAN_INTERVAL)
 end
