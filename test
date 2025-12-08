@@ -1,107 +1,92 @@
-local colony = peripheral.wrap("top")
-local me = peripheral.wrap("bottom")
+--------------------
+-- EZRA BUILDER AUTOMATION
+--------------------
+local SCAN_INTERVAL = 10  -- seconds between idle scans
+local CHEST_SIDE = "left" -- adjust to where your chest is
+local colony_integrator = peripheral.wrap("top")
+local me_bridge = peripheral.wrap("bottom")
+local DEBUG = true
 
-if not colony then error("Colony Integrator missing on top") end
-if not me then error("ME Bridge missing on bottom") end
-
--- Try to get integrator location safely
-local integratorPos = colony.getLocation()
-if not integratorPos or not integratorPos.x then
-    error("colony.getLocation() returned nil or invalid position")
+local function dprint(...)
+    if DEBUG then print("[DEBUG]", ...) end
 end
 
--- Safe distance function
-local function distance(a, b)
-    if not a or not b or not a.x or not b.x then
-        return 99999 -- safely return big distance
+-- Helper to get all items from AE2
+local function getAEItems()
+    if type(me_bridge.listItems) ~= "function" then
+        dprint("me_bridge.listItems not available!")
+        return {}
     end
-    local dx = a.x - b.x
-    local dy = a.y - b.y
-    local dz = a.z - b.z
-    return math.sqrt(dx*dx + dy*dy + dz*dz)
+    local ok, items = pcall(me_bridge.listItems, me_bridge)
+    if not ok then
+        dprint("Failed to list AE2 items: ", items)
+        return {}
+    end
+    local aeItems = {}
+    for _, i in ipairs(items or {}) do
+        aeItems[i.name] = i.count or 0
+    end
+    return aeItems
 end
 
--- Safe builder detector
-local function getNearbyBuilders()
-    local nearby = {}
-    local buildings = colony.getBuildings()
-
-    if type(buildings) ~= "table" then
-        print("WARNING: getBuildings() returned non-table")
-        return nearby
+-- Export a stack to a chest
+local function exportToChest(itemName, count)
+    if not count or count <= 0 then return 0 end
+    local ok, moved = pcall(me_bridge.exportItem, me_bridge, {name=itemName, count=count}, CHEST_SIDE)
+    if ok and type(moved) == "number" then
+        dprint("Exported "..moved.."x "..itemName.." to chest")
+        return moved
+    else
+        dprint("Failed to export "..itemName.." count "..count)
+        return 0
     end
-
-    for _, b in pairs(buildings) do
-        if type(b) == "table" and b.type == "builder" and type(b.location) == "table" then
-            local dist = distance(integratorPos, b.location)
-            if dist <= 5 then
-                table.insert(nearby, b)
-            end
-        end
-    end
-
-    return nearby
 end
 
--- Safe request pull
-local function getAllRequests()
-    local out = {}
-    local reqs = colony.getRequests()
-
-    if type(reqs) ~= "table" then
-        print("WARNING: getRequests() returned non-table")
-        return out
-    end
-
-    for _, r in pairs(reqs) do
-        if type(r) == "table" then
-            table.insert(out, r)
-        end
-    end
-
-    return out
-end
-
--- Find requests belonging to builder huts near integrator
+-- Filter for Ezra's Builder Hut requests
 local function getEzraRequests()
-    local builders = getNearbyBuilders()
-    local requests = getAllRequests()
-    local out = {}
-
-    if #builders == 0 then
-        print("DEBUG: No nearby builders found")
-        return out
-    end
-
-    -- Collect builder IDs
-    local ids = {}
-    for _, b in ipairs(builders) do
-        if b.id then ids[b.id] = true end
-    end
-
-    -- Match requests
-    for _, req in ipairs(requests) do
-        local tgt = req.target
-        local bid = req.buildingId
-        local rid = req.builderId
-
-        if ids[tgt] or ids[bid] or ids[rid] then
-            table.insert(out, req)
+    local allRequests = colony_integrator.getRequests() or {}
+    local ezraRequests = {}
+    for _, r in ipairs(allRequests) do
+        if r.target and string.find(r.target, "Builder") and r.target:find("Ezra") then
+            table.insert(ezraRequests, r)
         end
     end
-
-    return out
+    return ezraRequests
 end
 
--- MAIN LOOP
-while true do
-    local ezra = getEzraRequests()
+-- Process requests one at a time
+local function processRequests()
+    local aeItems = getAEItems()
+    local requests = getEzraRequests()
 
-    if #ezra > 0 then
-        print("Ezra Requests: " .. #ezra)
+    if #requests == 0 then
+        dprint("No Ezra requests found.")
+        return false
+    end
+
+    for _, req in ipairs(requests) do
+        local itemName = req.items[1].name
+        local needed = req.count
+        local available = aeItems[itemName] or 0
+        local toExport = math.min(needed, available)
+        if toExport > 0 then
+            local moved = exportToChest(itemName, toExport)
+            dprint(string.format("Request for %d x %s, moved %d", needed, itemName, moved))
+        else
+            dprint("Item "..itemName.." not available in AE2 storage")
+        end
+    end
+    return true
+end
+
+-- Main loop
+while true do
+    local hasRequests = processRequests()
+    if hasRequests then
+        -- If we just processed requests, loop quickly to catch new ones
         sleep(1)
     else
-        print("No Ezra requests. Rescanning in 10s...")
-        sleep(10)
+        -- If no requests, wait 10 seconds before next scan
+        sleep(SCAN_INTERVAL)
     end
 end
