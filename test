@@ -1,4 +1,93 @@
-local methods = peripheral.getMethods("bottom")
-for i = 46, math.min(60, #methods) do
-  print("Method:", methods[i])
+-- Colony Integrator on TOP, ME Bridge on BOTTOM, Chest/Barrel on RIGHT
+local colony = peripheral.wrap("top")
+if not colony then error("No Colony Integrator detected on TOP") end
+
+local me = peripheral.wrap("bottom")
+if not me then error("No ME Bridge detected on BOTTOM") end
+
+-- Set the side of the ME Bridge where your chest/barrel is attached
+local TARGET_SIDE = "right"   -- change to "top", "bottom", "left", etc. as needed
+
+local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
+
+-- Count items in AE2
+local function getItemCount(name)
+  local items = me.getItems() or {}
+  local total = 0
+  for _, it in pairs(items) do
+    if it.name == name then total = total + (it.count or 0) end
+  end
+  return total
+end
+
+-- Check if item is craftable
+local function isCraftable(name)
+  local ok, result = pcall(function() return me.isCraftable({name=name}) end)
+  return ok and result or false
+end
+
+-- Request autocrafting and confirm task appears
+local function requestCraft(name, count)
+  local ok, task = pcall(function()
+    return me.craftItem({name=name, count=count})
+  end)
+
+  if not ok or not task then
+    log("❌ craftItem failed for " .. name)
+    return false
+  end
+
+  -- Confirm task appears in getCraftingTasks
+  local tasks = me.getCraftingTasks() or {}
+  for _, t in ipairs(tasks) do
+    if t.item and t.item.name == name then
+      log("🛠 Craft task queued: " .. count .. "x " .. name)
+      return true
+    end
+  end
+
+  log("⚠ Craft task not visible yet for " .. name)
+  return false
+end
+
+-- Push requested items into the adjacent inventory
+local function pushItem(name, quota)
+  local available = getItemCount(name)
+
+  if available >= quota then
+    local ok = me.exportItem({name=name, count=quota}, TARGET_SIDE)
+    log((ok and "✔ Pushed " or "✖ Failed ") .. quota .. "x " .. name .. " to " .. TARGET_SIDE)
+    return
+  end
+
+  if isCraftable(name) then
+    if requestCraft(name, quota - available) then
+      log("⏳ Queued craft for " .. (quota - available) .. "x " .. name)
+    else
+      log("⚠ Could not queue craft for " .. name)
+    end
+  else
+    log("⚠ Skipping " .. name .. " (not craftable, only " .. available .. " in AE2)")
+  end
+end
+
+-- Main loop
+while true do
+  local requests = colony.getRequests() or {}
+  local handled = 0
+  local seen = {}
+
+  for _, req in ipairs(requests) do
+    for _, item in ipairs(req.items or {}) do
+      if not seen[item.name] then
+        local quota = (item.maxCount and item.maxCount == 1) and 4 or 64
+        pushItem(item.name, quota)
+        seen[item.name] = true
+        handled = handled + 1
+      end
+    end
+  end
+
+  log("Loop complete, handled " .. handled .. " unique items")
+  sleep(5)
 end
