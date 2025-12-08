@@ -4,26 +4,35 @@ local me = peripheral.wrap("bottom")
 if not colony then error("Colony Integrator missing on top") end
 if not me then error("ME Bridge missing on bottom") end
 
--- Get integrator position
-local integratorPos = colony.getLocation()  -- {x=, y=, z=}
+-- Try to get integrator location safely
+local integratorPos = colony.getLocation()
+if not integratorPos or not integratorPos.x then
+    error("colony.getLocation() returned nil or invalid position")
+end
 
--- Distance helper
+-- Safe distance function
 local function distance(a, b)
+    if not a or not b or not a.x or not b.x then
+        return 99999 -- safely return big distance
+    end
     local dx = a.x - b.x
     local dy = a.y - b.y
     local dz = a.z - b.z
     return math.sqrt(dx*dx + dy*dy + dz*dz)
 end
 
--- Returns builder huts within 5 blocks
+-- Safe builder detector
 local function getNearbyBuilders()
     local nearby = {}
     local buildings = colony.getBuildings()
 
-    if not buildings then return nearby end
+    if type(buildings) ~= "table" then
+        print("WARNING: getBuildings() returned non-table")
+        return nearby
+    end
 
     for _, b in pairs(buildings) do
-        if b.type == "builder" and b.location then
+        if type(b) == "table" and b.type == "builder" and type(b.location) == "table" then
             local dist = distance(integratorPos, b.location)
             if dist <= 5 then
                 table.insert(nearby, b)
@@ -34,46 +43,65 @@ local function getNearbyBuilders()
     return nearby
 end
 
--- Pull ALL requests from colony first
+-- Safe request pull
 local function getAllRequests()
-    local reqs = {}
-    local all = colony.getRequests()
+    local out = {}
+    local reqs = colony.getRequests()
 
-    if not all then return reqs end
-
-    for _, r in pairs(all) do
-        table.insert(reqs, r)
+    if type(reqs) ~= "table" then
+        print("WARNING: getRequests() returned non-table")
+        return out
     end
 
-    return reqs
-end
-
--- Get requests specifically for Ezra (only nearby builders)
-local function getEzraRequests()
-    local nearbyBuilders = getNearbyBuilders()
-    local allRequests = getAllRequests()
-    local ezraReqs = {}
-
-    for _, req in ipairs(allRequests) do
-        for _, b in ipairs(nearbyBuilders) do
-            if req.target == b.id or req.buildingId == b.id or req.builderId == b.id then
-                table.insert(ezraReqs, req)
-            end
+    for _, r in pairs(reqs) do
+        if type(r) == "table" then
+            table.insert(out, r)
         end
     end
 
-    return ezraReqs
+    return out
 end
 
--- Main loop
-while true do
-    local ezraRequests = getEzraRequests()
+-- Find requests belonging to builder huts near integrator
+local function getEzraRequests()
+    local builders = getNearbyBuilders()
+    local requests = getAllRequests()
+    local out = {}
 
-    if #ezraRequests > 0 then
-        print("Ezra has " .. #ezraRequests .. " requests nearby.")
-        -- Process them here…
+    if #builders == 0 then
+        print("DEBUG: No nearby builders found")
+        return out
+    end
+
+    -- Collect builder IDs
+    local ids = {}
+    for _, b in ipairs(builders) do
+        if b.id then ids[b.id] = true end
+    end
+
+    -- Match requests
+    for _, req in ipairs(requests) do
+        local tgt = req.target
+        local bid = req.buildingId
+        local rid = req.builderId
+
+        if ids[tgt] or ids[bid] or ids[rid] then
+            table.insert(out, req)
+        end
+    end
+
+    return out
+end
+
+-- MAIN LOOP
+while true do
+    local ezra = getEzraRequests()
+
+    if #ezra > 0 then
+        print("Ezra Requests: " .. #ezra)
+        sleep(1)
     else
-        print("No nearby Ezra requests. Scanning in 10 seconds...")
+        print("No Ezra requests. Rescanning in 10s...")
         sleep(10)
     end
 end
