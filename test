@@ -26,27 +26,32 @@ local function isCraftable(name)
   return ok and result or false
 end
 
--- Request autocrafting and confirm task appears
-local function requestCraft(name, count)
-  local ok, task = pcall(function()
-    return me.craftItem({name=name, count=count})
-  end)
+-- Request autocrafting with retry and task confirmation
+local function requestCraft(name, count, retries, delay)
+  retries = retries or 5
+  delay = delay or 3
 
-  if not ok or not task then
-    log("❌ craftItem failed for " .. name)
-    return false
-  end
+  for attempt = 1, retries do
+    local ok, task = pcall(function()
+      return me.craftItem({name=name, count=count})
+    end)
 
-  -- Confirm task appears in getCraftingTasks
-  local tasks = me.getCraftingTasks() or {}
-  for _, t in ipairs(tasks) do
-    if t.item and t.item.name == name then
-      log("🛠 Craft task queued: " .. count .. "x " .. name)
-      return true
+    if ok and task then
+      local tasks = me.getCraftingTasks() or {}
+      for _, t in ipairs(tasks) do
+        if t.item and t.item.name == name then
+          log(("🛠 Craft task queued (%dx %s) on attempt %d"):format(count, name, attempt))
+          return true
+        end
+      end
+      log(("⌛ Craft requested but not visible yet (%dx %s), attempt %d"):format(count, name, attempt))
+    else
+      log(("❌ craftItem failed (%dx %s), attempt %d"):format(count, name, attempt))
     end
+    sleep(delay)
   end
 
-  log("⚠ Craft task not visible yet for " .. name)
+  log("⚠ Craft task never confirmed for " .. name)
   return false
 end
 
@@ -61,7 +66,7 @@ local function pushItem(name, quota)
   end
 
   if isCraftable(name) then
-    if requestCraft(name, quota - available) then
+    if requestCraft(name, quota - available, 5, 3) then
       log("⏳ Queued craft for " .. (quota - available) .. "x " .. name)
     else
       log("⚠ Could not queue craft for " .. name)
