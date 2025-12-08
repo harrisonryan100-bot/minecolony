@@ -1,3 +1,14 @@
-for _, side in ipairs({"top","bottom","left","right","front","back"}) do
-    print(side, peripheral.getType(side))
+local function tryExport(meBridge, stack)
+    local sides = {"top","bottom","left","right","front","back"}
+    for _, side in ipairs(sides) do
+        local ok, result = pcall(function()
+            return meBridge.exportItem(stack, side)
+        end)
+        if ok and result > 0 then
+            print("Exported " .. result .. " of " .. stack.name .. " to side " .. side)
+            return result
+        end
+    end
+    print("Failed to export " .. stack.name)
+    return 0
 end
