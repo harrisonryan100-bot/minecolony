@@ -8,13 +8,13 @@ if not me_bridge then error("No ME Bridge found on bottom!") end
 -- Pause interval between scans
 local SCAN_INTERVAL = 10
 
--- Helper debug print
+-- Debug helper
 local DEBUG = true
 local function dprint(...)
     if DEBUG then print("[DEBUG]", ...) end
 end
 
--- Attempt to export an item to any connected inventory on the ME Bridge
+-- Export an item to any connected inventory
 local function exportItem(itemName, count)
     local stack = { name = itemName, count = count or 1 }
     local sides = {"top", "bottom", "left", "right", "front", "back"}
@@ -31,29 +31,32 @@ local function exportItem(itemName, count)
     return 0
 end
 
--- Main loop: check requests and fulfill them
+-- Main loop
 while true do
     local requests = colony_integrator.getRequests()
     if requests then
+        -- Loop through requests multiple times to try and fulfill fully
         for _, req in ipairs(requests) do
-            local reqName = req.name
             local reqItem = req.items[1].name
             local reqCount = req.count
             local reqTarget = req.target or ""
 
-            -- FILTER: Only process requests for Ezra's Builder Hut
             if string.find(reqTarget, "Ezra") then
-                -- Try exporting the requested amount directly
-                local exported = exportItem(reqItem, reqCount)
-                dprint(string.format("Request for Ezra: %d/%d %s provided", exported, reqCount, reqItem))
-            else
-                dprint("Skipping request for " .. reqTarget)
+                local remaining = reqCount
+                while remaining > 0 do
+                    local exported = exportItem(reqItem, remaining)
+                    remaining = remaining - exported
+                    if exported == 0 then
+                        dprint("Waiting for AE2 stock for " .. reqItem)
+                        break
+                    end
+                end
+                dprint(string.format("Finished processing %d x %s for Ezra", reqCount, reqItem))
             end
         end
     else
         dprint("No requests found from Colony Integrator.")
     end
 
-    -- Wait before next scan
     sleep(SCAN_INTERVAL)
 end
