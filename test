@@ -5,39 +5,56 @@ if not colony_integrator then error("No colony_integrator found on top") end
 local me_bridge = peripheral.wrap("bottom")
 if not me_bridge then error("No me_bridge found on bottom") end
 
--- Safe export function: tries all sides until it works
+-- Safe export
 local function safeExportItem(stack)
     local sides = {"top", "bottom", "left", "right", "front", "back"}
     for _, side in ipairs(sides) do
         local ok, exported = pcall(function()
             return me_bridge.exportItem(stack, side)
         end)
-        if ok and exported > 0 then
+        if ok and exported and exported > 0 then
             print("Exported " .. exported .. "x " .. stack.name .. " to side: " .. side)
             return exported
         end
     end
-    print("Failed to export " .. stack.name .. ": no output inventory found")
+    print("Could not export: " .. stack.name)
     return 0
 end
 
--- Main automation loop
+-- Main loop
 while true do
-    local allRequests = colony_integrator.getRequests() or {}
-    print("Found " .. #allRequests .. " requests from colony")
+    local all = colony_integrator.getRequests() or {}
+    local ezraRequests = {}
 
-    for _, req in ipairs(allRequests) do
+    -- Filter only Ezra Builder Hut requests
+    for _, req in ipairs(all) do
         if req.target:find("Builder") and req.target:find("Ezra") then
-            local itemName = req.items[1].name
-            local countNeeded = req.count
-
-            print("Attempting to fulfill request for " .. countNeeded .. "x " .. itemName .. " to Ezra's Builder Hut")
-
-            local exported = safeExportItem({ name = itemName, count = countNeeded })
-            print("Request result: " .. exported .. "/" .. countNeeded .. " exported")
+            table.insert(ezraRequests, req)
         end
     end
 
-    print("Cycle complete, waiting 10 seconds before next check...")
-    sleep(10)
+    -- If no requests, idle mode
+    if #ezraRequests == 0 then
+        print("No Ezra requests. Sleeping 10 seconds.")
+        sleep(10)
+    else
+        -- Handle exactly ONE request
+        local req = ezraRequests[1]
+
+        local itemName = req.items[1].name
+        local countNeeded = req.count
+
+        print("Ezra Request: " .. countNeeded .. "x " .. itemName)
+
+        -- Fulfil request
+        local exported = safeExportItem({
+            name = itemName,
+            count = countNeeded
+        })
+
+        print("Exported " .. exported .. "/" .. countNeeded .. " to Ezra")
+
+        -- Small pause before re-scanning
+        sleep(1)
+    end
 end
