@@ -1,8 +1,9 @@
 --------------------
--- EZRA BUILDER AUTOMATION
+-- BUILDER HUT AUTOMATION (5-block range)
 --------------------
 local SCAN_INTERVAL = 10  -- seconds between idle scans
 local CHEST_SIDE = "left" -- adjust to where your chest is
+local MAX_DISTANCE = 5    -- blocks from integrator to consider
 local colony_integrator = peripheral.wrap("top")
 local me_bridge = peripheral.wrap("bottom")
 local DEBUG = true
@@ -11,7 +12,7 @@ local function dprint(...)
     if DEBUG then print("[DEBUG]", ...) end
 end
 
--- Helper to get all items from AE2
+-- Get all items from AE2
 local function getAEItems()
     if type(me_bridge.listItems) ~= "function" then
         dprint("me_bridge.listItems not available!")
@@ -42,25 +43,36 @@ local function exportToChest(itemName, count)
     end
 end
 
--- Filter for Ezra's Builder Hut requests
-local function getEzraRequests()
+-- Filter Builder Hut requests by distance
+local function getNearbyBuilderRequests()
     local allRequests = colony_integrator.getRequests() or {}
-    local ezraRequests = {}
+    local nearbyRequests = {}
+
+    local integratorPos = colony_integrator.getColonyPosition() -- {x, y, z} assumed
+
     for _, r in ipairs(allRequests) do
-        if r.target and string.find(r.target, "Builder") and r.target:find("Ezra") then
-            table.insert(ezraRequests, r)
+        if r.target and string.find(r.target, "Builder") then
+            local bPos = r.buildingPosition or {x=0, y=0, z=0} -- fallback if API doesn't provide
+            local dx = bPos.x - integratorPos.x
+            local dy = bPos.y - integratorPos.y
+            local dz = bPos.z - integratorPos.z
+            local dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+            if dist <= MAX_DISTANCE then
+                table.insert(nearbyRequests, r)
+            end
         end
     end
-    return ezraRequests
+
+    return nearbyRequests
 end
 
 -- Process requests one at a time
 local function processRequests()
     local aeItems = getAEItems()
-    local requests = getEzraRequests()
+    local requests = getNearbyBuilderRequests()
 
     if #requests == 0 then
-        dprint("No Ezra requests found.")
+        dprint("No nearby builder requests found.")
         return false
     end
 
@@ -86,7 +98,7 @@ while true do
         -- If we just processed requests, loop quickly to catch new ones
         sleep(1)
     else
-        -- If no requests, wait 10 seconds before next scan
+        -- If no requests, wait SCAN_INTERVAL seconds before next scan
         sleep(SCAN_INTERVAL)
     end
 end
