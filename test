@@ -109,7 +109,7 @@ local function safeGetRequests()
   return ok and res or {}
 end
 
--- Main loop: process all requests, log targets
+-- Main loop: process only builder hut requests
 while true do
   local ok, err = xpcall(function()
     craftsThisLoop = 0
@@ -119,29 +119,30 @@ while true do
 
     for _, req in ipairs(safeGetRequests()) do
       local tgt = req.target or {}
-      local tloc = tgt.location or {}
       local tname = tgt.name or (tgt.type or "unknown")
 
-      -- Trace which building the request belongs to
-      log(string.format("→ Request target: %s @ (%s,%s,%s)", tostring(tname), tostring(tloc.x), tostring(tloc.y), tostring(tloc.z)))
+      -- Only process builder huts
+      if tname:lower():find("builder") then
+        log("→ Builder hut request from: " .. tostring(tname))
 
-      for _, item in ipairs(req.items or {}) do
-        local id = item.name
-        if id and not seen[id] then
-          -- Filter: remove non-Netherite tools
-          if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
-            if not isNetheriteTool(id) then
-              log("🗑 Removed non-Netherite tool request: " .. id .. " (target: " .. tostring(tname) .. ")")
-              removed = removed + 1
-              goto continue
+        for _, item in ipairs(req.items or {}) do
+          local id = item.name
+          if id and not seen[id] then
+            -- Filter: remove non-Netherite tools
+            if id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword") then
+              if not isNetheriteTool(id) then
+                log("🗑 Removed non-Netherite tool request: " .. id)
+                removed = removed + 1
+                goto continue
+              end
             end
+            local quota = item.count or 1
+            pushItem(id, quota)
+            seen[id] = true
+            handled = handled + 1
           end
-          local quota = item.count or 1
-          pushItem(id, quota)
-          seen[id] = true
-          handled = handled + 1
+          ::continue::
         end
-        ::continue::
       end
     end
 
