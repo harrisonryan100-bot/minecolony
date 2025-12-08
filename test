@@ -1,68 +1,13 @@
-------------------------------------------------------------
--- Simple AE2 to Chest Export Script
--- Only handles Builder's Hut requests
-------------------------------------------------------------
+local sides = {"top","bottom","left","right","front","back"}
 
-local colonySide = "top"    -- Colony Integrator side
-local meBridgeSide = "bottom"  -- ME Bridge side
-local chestSide = "back"    -- Chest to push items into
-
--- Wrap peripherals
-local colony = peripheral.wrap(colonySide)
-if not colony then error("Colony Integrator not detected on " .. colonySide) end
-
-local meBridge = peripheral.wrap(meBridgeSide)
-if not meBridge then error("ME Bridge not detected on " .. meBridgeSide) end
-
-local chest = peripheral.wrap(chestSide)
-if not chest then error("No chest detected on " .. chestSide) end
-
-print("Colony Integrator detected on " .. colonySide)
-print("ME Bridge detected on " .. meBridgeSide)
-print("Chest detected on " .. chestSide)
-
--- Simple export function
-local function exportToChest(itemName, count)
-    -- Attempt to pull from ME Bridge (simulate with exportItem if available)
-    if type(meBridge.pullItem) == "function" then
-        local pulled = meBridge.pullItem({name = itemName, count = count})
-        if pulled > 0 then
-            local transferred = chest.pullItem(meBridgeSide, pulled) -- fallback
-            print("Pulled " .. pulled .. " of " .. itemName .. " to chest")
-            return pulled
-        else
-            print("Item " .. itemName .. " not available in AE2")
-            return 0
-        end
-    elseif type(meBridge.exportItem) == "function" then
-        local exported = meBridge.exportItem({name = itemName, count = count}, chestSide)
-        print("Exported " .. exported .. " of " .. itemName .. " to chest")
-        return exported
-    else
-        print("ME Bridge cannot export items")
-        return 0
-    end
-end
-
--- Main loop
-while true do
-    local requests = colony.getRequests() or {}
-    for _, req in ipairs(requests) do
-        if req.target:match("Builder") then
-            local itemName = req.items[1] and req.items[1].name
-            local itemCount = req.count or 1
-            if itemName then
-                local success = exportToChest(itemName, itemCount)
-                if success >= itemCount then
-                    print("Request fulfilled: " .. itemName .. " x" .. itemCount)
-                else
-                    print("Could not fully fulfill: " .. itemName .. " x" .. itemCount)
-                end
-            else
-                print("Could not determine item for request: " .. req.name)
-            end
+print("=== Detecting connected inventories ===")
+for _, side in ipairs(sides) do
+    local p = peripheral.wrap(side)
+    if p then
+        local name = peripheral.getType(side)
+        if name == "minecraft:chest" or name == "minecraft:barrel" or name:find("chest") then
+            print("Inventory detected on side " .. side .. ": " .. name)
         end
     end
-    sleep(5)  -- wait 5 seconds before scanning again
 end
-------------------------------------------------------------
+print("=== Detection complete ===")
