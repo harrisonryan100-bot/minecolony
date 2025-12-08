@@ -1,105 +1,63 @@
---------------------
--- CONFIGURATION
---------------------
-local ME_SIDE       = "bottom"   -- side the ME Bridge is on
-local CHEST_SIDE    = "right"    -- side the chest is on
-local SCAN_INTERVAL = 10         -- seconds between scans
-local DEBUG         = true
+-- Settings
+local ME_SIDE = "bottom"       -- side ME Bridge is on
+local COLONY_SIDE = "top"      -- side Colony Integrator is on
+local CHEST_SIDE = "front"     -- side chest to export items
 
---------------------
--- SETUP PERIPHERALS
---------------------
+-- Wrap peripherals
 local meBridge = peripheral.wrap(ME_SIDE)
-if not meBridge then error("No ME Bridge found on side " .. ME_SIDE) end
+if not meBridge then error("No ME Bridge detected on " .. ME_SIDE) end
 
-local chest = peripheral.wrap(CHEST_SIDE)
-if not chest then error("No chest found on side " .. CHEST_SIDE) end
+local colony = peripheral.wrap(COLONY_SIDE)
+if not colony then error("No Colony Integrator detected on " .. COLONY_SIDE) end
 
-local colony = peripheral.wrap("top")
-if not colony then error("No Colony Integrator found on top") end
-
---------------------
--- DEBUG PRINT
---------------------
-local function dprint(...)
-    if DEBUG then print("[DEBUG]", ...) end
-end
-
---------------------
--- HELPER FUNCTIONS
---------------------
--- Craft items if not enough are in AE2
-local function craftItem(itemName, count)
-    if type(meBridge.craftItem) ~= "function" then
-        dprint("ME Bridge cannot craft items: " .. itemName)
-        return false
-    end
-    local ok, result = pcall(meBridge.craftItem, meBridge, {name=itemName, count=count})
-    if ok then
-        dprint("Requested craft: " .. count .. "x " .. itemName)
-        return true
+-- Safe method to get items from ME Bridge
+local function getMEItems()
+    if type(meBridge.listItems) == "function" then
+        return meBridge.listItems() or {}
+    elseif type(meBridge.getItems) == "function" then
+        return meBridge.getItems() or {}
     else
-        dprint("Craft request failed for " .. itemName .. ": " .. tostring(result))
-        return false
+        error("ME Bridge has no listItems or getItems method")
     end
 end
 
--- Pull items from AE2 and move to chest
+-- Move items to chest
 local function moveToChest(itemName, count)
-    local items = meBridge.listItems() or {}
-    local total = 0
+    local totalMoved = 0
+    local items = getMEItems()
     for _, entry in ipairs(items) do
         if entry.name == itemName then
-            local toPull = math.min(entry.count, count - total)
-            -- Actually move item to chest
-            if type(meBridge.withdrawItem) == "function" then
-                local ok, pulled = pcall(meBridge.withdrawItem, meBridge, itemName, toPull)
-                if ok and pulled and pulled > 0 then
-                    chest.pullItem(ME_SIDE, pulled) -- chest pulls the items in
-                    total = total + pulled
-                    dprint("Moved " .. pulled .. "x " .. itemName .. " to chest")
-                end
-            end
-            if total >= count then break end
+            local toMove = math.min(entry.count, count - totalMoved)
+            local exported = meBridge.exportItem({name=itemName, count=toMove}, CHEST_SIDE)
+            totalMoved = totalMoved + (exported or 0)
+            print("Exported " .. (exported or 0) .. "x " .. itemName .. " to chest")
+            if totalMoved >= count then break end
         end
     end
-    return total
+    return totalMoved
 end
 
---------------------
--- MAIN LOOP
---------------------
+-- Main loop
 while true do
     local requests = colony.getRequests() or {}
-    dprint("Found " .. #requests .. " request(s)")
-    
+    print("Found " .. #requests .. " request(s)")
     for _, req in ipairs(requests) do
-        local itemName = req.items[1].name
-        local needed   = req.count
-        dprint("Request: " .. needed .. "x " .. itemName .. " for " .. req.target)
-
-        -- Check how many are in AE2
-        local aeItems = meBridge.listItems() or {}
-        local available = 0
-        for _, entry in ipairs(aeItems) do
-            if entry.name == itemName then
-                available = available + entry.count
+        if req.target:match("Builder") then
+            local itemName = req.items[1].name
+            local needed = req.count
+            local available = 0
+            for _, entry in ipairs(getMEItems()) do
+                if entry.name == itemName then
+                    available = entry.count
+                    break
+                end
+            end
+            if available >= needed then
+                moveToChest(itemName, needed)
+            else
+                print("Not enough " .. itemName .. " in ME, skipping for now")
             end
         end
-
-        local toCraft = 0
-        if available < needed then
-            toCraft = needed - available
-            craftItem(itemName, toCraft)
-        end
-
-        -- Move items from AE2 to chest
-        local pulled = moveToChest(itemName, needed)
-        if pulled < needed then
-            dprint("Could not fulfill full request for " .. itemName .. ", pulled " .. pulled)
-        else
-            dprint("Successfully moved " .. pulled .. "x " .. itemName .. " to chest")
-        end
     end
-    sleep(SCAN_INTERVAL)
+    sleep(10)
 end
