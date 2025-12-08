@@ -9,8 +9,8 @@ local TARGET_SIDE = "right"
 
 local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
 
--- Ezra's builder hut location (replace with actual values from your colony)
-local ezraHut = { x = 123, y = 64, z = -456, dimension = "minecraft:overworld" }
+-- Ezra's builder hut location (hard-coded, lowered Y by 1)
+local ezraHut = { x = 31, y = 62, z = -46, dimension = "minecraft:overworld" }
 
 -- Netherite tool whitelist
 local netheriteTools = {
@@ -112,11 +112,6 @@ local function safeGetBuilderResources(loc)
   return ok and res or {}
 end
 
-local function safeIsPendingConstruction(loc)
-  local ok, res = pcall(function() return colony.isPendingConstruction(loc) end)
-  return ok and res or false
-end
-
 -- Main loop: Ezra’s hut only
 while true do
   local ok, err = xpcall(function()
@@ -124,9 +119,11 @@ while true do
     local handled = 0
     local seen = {}
 
-    if safeIsPendingConstruction(ezraHut) then
-      log("Ezra's builder hut has a pending construction job")
-      for _, it in ipairs(safeGetBuilderResources(ezraHut)) do
+    -- Always check Ezra's hut resources
+    local resources = safeGetBuilderResources(ezraHut)
+    if #resources > 0 then
+      log("Ezra's hut has active requests")
+      for _, it in ipairs(resources) do
         local id = it.item and it.item.name
         if id and not seen[id] then
           -- Filter: remove non-Netherite tools
@@ -144,10 +141,10 @@ while true do
         ::continue::
       end
     else
-      log("Ezra's hut is idle, skipping")
+      log("Ezra's hut has no resource requests")
     end
 
-    log("Loop complete, handled " .. handled .. " unique items")
+    log("Loop complete, handled " .. handled .. " unique items for Ezra")
   end, function(e) return tostring(e) end)
 
   if not ok then log("🔥 Loop error recovered:\n" .. tostring(err)) end
