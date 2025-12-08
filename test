@@ -1,0 +1,84 @@
+-- ===========================================
+-- MineColonies Builder Diagnostic & Logging
+-- Colony Integrator on TOP, ME Bridge on BOTTOM
+-- Logs Builder Hut requests and maps to AE2 item IDs
+-- Does NOT move items (safe for your current AE2 setup)
+-- ===========================================
+
+-- Wrap peripherals
+colony = peripheral.wrap("top")      -- Colony Integrator
+me = peripheral.wrap("bottom")       -- ME Bridge
+
+if not colony then
+    print("Colony Integrator NOT detected on top! Exiting.")
+    return
+else
+    print("Colony Integrator detected on top")
+end
+
+if not me then
+    print("ME Bridge NOT detected on bottom! Exiting.")
+    return
+else
+    print("ME Bridge detected on bottom")
+end
+
+-- Clear previous log
+if fs.exists("automation_log.txt") then
+    fs.delete("automation_log.txt")
+end
+
+-- Logging helper
+function log(msg)
+    local timestamped = os.date("%H:%M:%S") .. " | " .. msg
+    print(timestamped)
+    local file = fs.open("automation_log.txt", "a")
+    file.writeLine(timestamped)
+    file.close()
+end
+
+-- Mapping from parsed request names to AE2 item IDs
+nameToAE2 = {
+    ["Crafting Table"] = "minecraft:crafting_table",
+    ["Polished Deepslate Panel"] = "minecraft:polished_deepslate_slab",
+    ["Spruce Fence"] = "minecraft:spruce_fence",
+    ["Oak Planks"] = "minecraft:oak_planks",
+    ["Stone Bricks"] = "minecraft:stone_bricks",
+    ["Polished Deepslate Slab"] = "minecraft:polished_deepslate_slab",
+    ["Cobblestone Extra Shingles"] = "minecraft:cobblestone" -- example mapping
+}
+
+-- Main diagnostic loop
+while true do
+    local requests = colony.getRequests() or {}
+    log("Found " .. #requests .. " request(s) in Colony Integrator")
+
+    for i, req in ipairs(requests) do
+        -- Only handle Builder requests
+        if req.target and string.find(req.target, "Builder") then
+            -- Only handle PENDING or IN_PROGRESS requests
+            if req.state == "PENDING" or req.state == "IN_PROGRESS" then
+                -- Parse quantity prefix
+                local parsedName = nil
+                if req.name then
+                    local s, e, name = string.find(req.name, "%d+%-?%d*%s+(.+)")
+                    parsedName = name
+                end
+
+                local ae2Item = (req.items and req.items.name) or nameToAE2[parsedName]
+                local totalCount = (req.items and req.items.count) or req.count or 1
+
+                if ae2Item then
+                    log("Builder Request: " .. req.target .. " needs " .. totalCount .. "x " .. ae2Item .. " (original: " .. req.name .. ")")
+                else
+                    log("Builder Request: " .. req.target .. " could not determine AE2 item for " .. req.name)
+                end
+
+                -- Optional: mark as complete manually
+                -- colony.completeRequest(req)
+            end
+        end
+    end
+
+    sleep(5) -- Wait 5 seconds before next loop
+end
