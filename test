@@ -1,52 +1,25 @@
 --------------------
--- USER SETTINGS
+-- MAIN LOOP (continuous export)
 --------------------
-local SCAN_INTERVAL = 10 -- seconds between scans
+local SHORT_SLEEP = 0.1 -- seconds between partial exports
 
---------------------
--- PERIPHERAL SETUP
---------------------
-local colony_integrator = peripheral.wrap("top")
-if not colony_integrator then error("No Colony Integrator found on top") end
-
-local me_bridge = peripheral.wrap("bottom")
-if not me_bridge then error("No ME Bridge found on bottom") end
-
---------------------
--- HELPER FUNCTIONS
---------------------
-local function dprint(...)
-    print("[DEBUG]", ...)
-end
-
--- Use the working export method
-local function exportItem(itemName, count)
-    local stack = { name = itemName, count = count }
-    local sides = {"top","bottom","left","right","front","back"}
-    for _, side in ipairs(sides) do
-        local ok, exported = pcall(function()
-            return me_bridge.exportItem(stack, side)
-        end)
-        if ok and exported > 0 then
-            dprint("Exported " .. exported .. " of " .. itemName .. " to side " .. side)
-            return exported
-        end
-    end
-    dprint("Failed to export " .. itemName)
-    return 0
-end
-
---------------------
--- MAIN LOOP
---------------------
 while true do
     local requests = colony_integrator.getRequests()
     for _, req in ipairs(requests) do
         if req.target == "Builder Ezra P. Barrett" then
             local itemName = req.items[1].name
-            local itemCount = req.count
-            dprint("Processing request:", itemName, "x" .. itemCount)
-            exportItem(itemName, itemCount)
+            local remaining = req.count
+            dprint("Processing request:", itemName, "x" .. remaining)
+
+            while remaining > 0 do
+                local exported = exportItem(itemName, remaining)
+                if exported == 0 then
+                    -- Nothing could be exported this tick, wait a bit
+                    sleep(SHORT_SLEEP)
+                else
+                    remaining = remaining - exported
+                end
+            end
         end
     end
     sleep(SCAN_INTERVAL)
