@@ -1,59 +1,15 @@
---------------------
--- Export to Ezra's Builder Hut
---------------------
+-- Wrap source and destination
+local source = peripheral.wrap("top")       -- the barrel/chest with items
+local destination = peripheral.wrap("back") -- the chest you want to move items into
 
-local me_bridge = peripheral.find("meBridge")
-local colony_integrator  = peripheral.find("colonyIntegrator")
+if not source then error("Source inventory not found!") end
+if not destination then error("Destination chest not found!") end
 
-if not me_bridge then error("No ME Bridge found!") end
-if not colony_integrator then error("No Colony Integrator found!") end
-
-local OUTPUT_SIDE = "back"  -- Set to the side of the barrel or ME Chest
-
-local function dprint(...)
-    print("[DEBUG]", ...)
-end
-
-local function safePeripheralCall(periph, method, ...)
-    if type(periph[method]) ~= "function" then
-        dprint("Method " .. method .. " not available on peripheral")
-        return nil, "Method not available"
+-- Move items
+for slot = 1, source.size() do
+    local stack = source.getItemDetail(slot)
+    if stack then
+        local countMoved = destination.pullItem(peripheral.getName(source), slot, stack.count)
+        print("Moved " .. (countMoved or 0) .. " x " .. stack.name)
     end
-    local ok, result = pcall(periph[method], periph, ...)
-    if not ok then
-        dprint("Error calling " .. method .. ": " .. tostring(result))
-        return nil, result
-    end
-    return result
-end
-
--- Export a stack safely
-local function safeExport(stack)
-    local ok, exported = safePeripheralCall(me_bridge, "exportItem", stack, OUTPUT_SIDE)
-    if ok and type(exported) == "number" and exported > 0 then
-        dprint(string.format("Exported %d x %s to Ezra's Builder Hut via %s", exported, stack.name, OUTPUT_SIDE))
-        return exported
-    else
-        dprint(string.format("Failed to export %s to Ezra's Builder Hut via %s", stack.name, OUTPUT_SIDE))
-        return 0
-    end
-end
-
--- Main function: process only Ezra's Builder Hut requests
-local function exportToEzrasBuilderHut()
-    local requests = safePeripheralCall(colony_integrator, "getRequests") or {}
-    for _, req in ipairs(requests) do
-        if req.target:match("Builder") then
-            local itemName  = req.items[1].name
-            local itemCount = req.count
-            local stack = { name = itemName, count = itemCount }
-            safeExport(stack)
-        end
-    end
-end
-
--- Loop
-while true do
-    exportToEzrasBuilderHut()
-    sleep(10)
 end
