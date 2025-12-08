@@ -5,13 +5,13 @@ if not colony then error("No Colony Integrator detected on TOP") end
 local me = peripheral.wrap("bottom")
 if not me then error("No ME Bridge detected on BOTTOM") end
 
-local TARGET_SIDE = "right"   -- adjust as needed: "top", "bottom", "left", etc.
+local TARGET_SIDE = "right"   -- adjust as needed
 
 local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
 
--- Safe ME call wrapper: name is the method string on the ME bridge, args are passed positionally
-local function meSafe(name, ...)
-  local ok, res = pcall(function() return me[name](...) end)
+-- Safe ME call wrapper: accepts up to two arguments
+local function meSafe(name, arg1, arg2)
+  local ok, res = pcall(function() return me[name](arg1, arg2) end)
   if not ok then
     log("⚠ ME." .. name .. " error: " .. tostring(res))
     return nil
@@ -38,19 +38,12 @@ end
 
 -- Craft throttling
 local MIN_CRAFT_DELAY = 1.0   -- seconds between craft requests
-local MAX_CRAFTS_PER_LOOP = 6 -- cap crafts per loop to avoid CPU spam
+local MAX_CRAFTS_PER_LOOP = 6 -- cap crafts per loop
 local lastCraftTime = 0
 local craftsThisLoop = 0
 
 local function requestCraft(id, count)
   if count <= 0 then return true end
-
-  -- throttle per craft
-  local now = os.clock()
-  local since = now - lastCraftTime
-  if since < MIN_CRAFT_DELAY then
-    sleep(MIN_CRAFT_DELAY - since)
-  end
 
   if craftsThisLoop >= MAX_CRAFTS_PER_LOOP then
     log("⏸ Craft cap reached this loop, skipping: " .. id .. " x" .. count)
@@ -62,6 +55,12 @@ local function requestCraft(id, count)
     return false
   end
 
+  local now = os.clock()
+  local since = now - lastCraftTime
+  if since < MIN_CRAFT_DELAY then
+    sleep(MIN_CRAFT_DELAY - since)
+  end
+
   local result = meSafe("craftItem", { name = id, count = count })
   if result then
     lastCraftTime = os.clock()
@@ -69,7 +68,7 @@ local function requestCraft(id, count)
     log("🛠 Craft queued: " .. count .. "x " .. id)
     return true
   else
-    log("❌ craftItem returned nil for " .. id)
+    log("❌ craftItem failed for " .. id)
     return false
   end
 end
@@ -85,7 +84,7 @@ local function exportItem(id, count)
   end
 end
 
--- Push logic: export if available; otherwise safely queue craft
+-- Push logic
 local function pushItem(id, quota)
   local available = getItemCount(id)
 
@@ -104,7 +103,7 @@ local function pushItem(id, quota)
   end
 end
 
--- Safe colony calls (wrapped individually to avoid breaking main loop)
+-- Safe colony calls
 local function safeGetRequests()
   local ok, res = pcall(function() return colony.getRequests() end)
   if not ok then
