@@ -3,20 +3,20 @@ local integrator = peripheral.wrap("top")
 local me_bridge  = peripheral.wrap("bottom")
 local chest      = peripheral.wrap("back")
 
-if not integrator then error("No Colony Integrator on top") end
-if not me_bridge  then error("No ME Bridge on bottom") end
-if not chest      then error("No chest on back") end
+if not integrator then error("No Colony Integrator on top!") end
+if not me_bridge  then error("No ME Bridge on bottom!") end
+if not chest      then error("No chest on back!") end
 
--- Ezra's hut coordinates (example: x=100, y=64, z=200)
-local EZRA_HUT_POS = {x=100, y=64, z=200}
+-- Ezra's hut coordinates
+local EZRA_HUT_POS = {x=31, y=64, z=-45}
 local SLEEP_TIME = 10
 
--- Helper: compare two positions
+-- Helper to compare positions
 local function samePos(a, b)
     return a.x == b.x and a.y == b.y and a.z == b.z
 end
 
--- Export items from AE2 to chest
+-- Helper to export items from AE2 to chest
 local function exportItem(itemName, count)
     local ok, exported = pcall(function()
         return me_bridge.exportItem({name=itemName, count=count}, "back")
@@ -34,6 +34,7 @@ while true do
         local ezraRequests = {}
         for _, req in ipairs(allRequests) do
             if req.location and samePos(req.location, EZRA_HUT_POS) then
+                -- Only collect requests for Ezra's hut
                 for _, item in ipairs(req.items) do
                     ezraRequests[item.name] = (ezraRequests[item.name] or 0) + req.count
                 end
@@ -46,6 +47,7 @@ while true do
             for itemName, count in pairs(ezraRequests) do
                 local exported = exportItem(itemName, count)
                 if exported > 0 then
+                    -- Fulfill the request officially
                     pcall(function()
                         integrator.fulfillRequest("Builder's Hut", itemName, exported)
                     end)
