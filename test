@@ -1,4 +1,27 @@
-local allRequests = colony_integrator.getRequests()
-for _, req in ipairs(allRequests or {}) do
-    print("Request target:", req.target, "Item:", req.items[1].name, "Count:", req.count)
+-- Wrap the integrator peripheral (on top)
+local top = peripheral.wrap("top")
+if not top then
+    print("Error: No integrator found on top!")
+    return
+end
+
+-- Get all requests
+local allRequests = top.getRequests()
+if not allRequests then
+    print("No requests returned from integrator.")
+    return
+end
+
+print("Total requests found:", #allRequests)
+for i, req in ipairs(allRequests) do
+    local target = req.target or "Unknown"
+    local itemName = (req.items and req.items[1] and req.items[1].name) or "Unknown"
+    local count = req.count or 0
+
+    -- Print all requests and identify Ezra's Builder Hut
+    print(string.format("[%d] Target: %s | Item: %s | Count: %d", i, target, itemName, count))
+    
+    if target:lower():find("ezra") then
+        print(">>> This is Ezra's Builder Hut request!")
+    end
 end
