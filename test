@@ -5,11 +5,22 @@ if not colony then error("No Colony Integrator detected on TOP") end
 local me = peripheral.wrap("bottom")
 if not me then error("No ME Bridge detected on BOTTOM") end
 
-local TARGET_SIDE = "right"
+local TARGET_SIDE = "right"   -- adjust as needed: "top", "bottom", "left", etc.
 
 local function log(msg) print(os.date("%H:%M:%S") .. " | " .. msg) end
 
--- Safe ME call wrapper
+-- ====== CONFIG: add builder hut locations here ======
+-- Replace each entry with your actual builder hut location object.
+-- Example formats (adjust to match your API):
+-- { x = 123, y = 64, z = -456, dimension = "minecraft:overworld" }
+-- or MineColonies location object as returned in logs (verbatim).
+local BUILDERS = {
+  -- { x = 0, y = 0, z = 0, dimension = "minecraft:overworld" },
+  -- { x = 10, y = 65, z = -20, dimension = "minecraft:overworld" },
+}
+-- ================================================
+
+-- Safe ME call wrapper: accepts up to two arguments
 local function meSafe(name, arg1, arg2)
   local ok, res = pcall(function() return me[name](arg1, arg2) end)
   if not ok then
@@ -49,7 +60,7 @@ local function requestCraft(id, count)
     return false
   end
   if not isCraftable(id) then
-    log("⚠ Uncraftable: " .. id)
+    log("⚠ Uncraftable: " .. id .. " (pattern missing)")
     return false
   end
   local now = os.clock()
@@ -78,6 +89,7 @@ local function exportItem(id, count)
   end
 end
 
+-- Push logic
 local function pushItem(id, quota)
   local available = getItemCount(id)
   if available >= quota then
@@ -94,28 +106,35 @@ local function pushItem(id, quota)
   end
 end
 
--- Safe colony calls
+-- Safe colony calls (no getBuildings used)
 local function safeGetRequests()
   local ok, res = pcall(function() return colony.getRequests() end)
-  return ok and res or {}
-end
-
-local function safeGetBuildings()
-  local ok, res = pcall(function() return colony.getBuildings() end)
-  return ok and res or {}
+  if not ok then
+    log("⚠ colony.getRequests error: " .. tostring(res))
+    return {}
+  end
+  return res or {}
 end
 
 local function safeGetBuilderResources(loc)
   local ok, res = pcall(function() return colony.getBuilderResources(loc) end)
-  return ok and res or {}
+  if not ok then
+    log("⚠ colony.getBuilderResources error: " .. tostring(res))
+    return {}
+  end
+  return res or {}
 end
 
 local function safeIsPendingConstruction(loc)
   local ok, res = pcall(function() return colony.isPendingConstruction(loc) end)
-  return ok and res or false
+  if not ok then
+    log("⚠ colony.isPendingConstruction error: " .. tostring(res))
+    return false
+  end
+  return res == true
 end
 
--- Main loop
+-- Main loop (no getBuildings)
 while true do
   local ok, err = xpcall(function()
     craftsThisLoop = 0
@@ -135,23 +154,21 @@ while true do
       end
     end
 
-    -- Builder hut-specific requests (only if pending construction)
-    for _, b in ipairs(safeGetBuildings()) do
-      if b.type == "builder" then
-        if safeIsPendingConstruction(b.location) then
-          log("Builder " .. b.name .. " has a pending construction job")
-          for _, it in ipairs(safeGetBuilderResources(b.location)) do
-            local id = it.item and it.item.name
-            if id and not seen[id] then
-              local quota = it.needed or 1
-              pushItem(id, quota)
-              seen[id] = true
-              handled = handled + 1
-            end
+    -- Builder hut-specific requests via manual locations
+    for _, loc in ipairs(BUILDERS) do
+      if safeIsPendingConstruction(loc) then
+        log("Builder at (" .. (loc.x or "?") .. "," .. (loc.y or "?") .. "," .. (loc.z or "?") .. ") has a pending construction job")
+        for _, it in ipairs(safeGetBuilderResources(loc)) do
+          local id = it.item and it.item.name
+          if id and not seen[id] then
+            local quota = it.needed or 1
+            pushItem(id, quota)
+            seen[id] = true
+            handled = handled + 1
           end
-        else
-          log("Builder " .. b.name .. " is idle, skipping")
         end
+      else
+        log("Builder at (" .. (loc.x or "?") .. "," .. (loc.y or "?") .. "," .. (loc.z or "?") .. ") is idle, skipping")
       end
     end
 
