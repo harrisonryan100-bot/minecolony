@@ -1,22 +1,18 @@
 local colony = peripheral.wrap("top")
 local function log(msg) print(os.date("%H:%M:%S").." | "..msg) end
 
-local function safeGetWorkOrders()
-  local ok,res = pcall(function() return colony.getWorkOrders() end)
-  return ok and res or {}
-end
-local function safeGetWorkOrderResources(id)
-  local ok,res = pcall(function() return colony.getWorkOrderResources(id) end)
+local function safeGetBuildings()
+  local ok,res = pcall(function() return colony.getBuildings() end)
   return ok and res or {}
 end
 
 while true do
-  local orders = safeGetWorkOrders()
-  log("WorkOrders: "..#orders)
-  for _,wo in ipairs(orders) do
-    log("WO "..wo.id.." builder="..tostring(wo.builder).." building="..tostring(wo.buildingName))
-    for _,res in ipairs(safeGetWorkOrderResources(wo.id)) do
-      log("  "..res.needed.."x "..res.item.name.." ("..res.status..")")
+  local blds = safeGetBuildings()
+  log("Buildings: "..#blds)
+  for _,b in ipairs(blds) do
+    if b.type == "builder" then
+      log("Builder: "..b.name.." lvl="..b.level.." @ ("..b.location.x..","..b.location.y..","..b.location.z..")")
+      log("  isWorkingOn="..tostring(b.isWorkingOn).." priority="..tostring(b.priority))
     end
   end
   sleep(10)
