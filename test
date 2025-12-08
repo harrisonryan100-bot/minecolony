@@ -1,31 +1,21 @@
--- Wrap source and destination
-local source = peripheral.wrap("top")       -- barrel or chest with items
-local destination = peripheral.wrap("back") -- the chest you want to move items into
+-- Replace "top" and "back" with the sides your chests are actually on
+local sourceSide = "top"
+local destSide   = "back"
 
-if not source then error("Source inventory not found!") end
-if not destination then error("Destination chest not found!") end
+if not peripheral.isPresent(sourceSide) then error("No chest found on " .. sourceSide) end
+if not peripheral.isPresent(destSide) then error("No chest found on " .. destSide) end
 
--- Function to get items safely
-local function getAllItems(inv)
-    if type(inv.list) == "function" then
-        return inv.list() -- some mod inventories
-    elseif type(inv.getAllStacks) == "function" then
-        return inv.getAllStacks() -- barrels, storage drawers, etc
-    else
-        error("Inventory has no supported list method")
-    end
-end
+local source = peripheral.wrap(sourceSide)
+local dest   = peripheral.wrap(destSide)
 
-local items = getAllItems(source)
+print("Source chest size:", source.size())
+print("Destination chest size:", dest.size())
 
-for slot, stack in pairs(items) do
-    local countMoved
-    if type(destination.pullItem) == "function" then
-        countMoved = destination.pullItem(peripheral.getName(source), slot, stack.count)
-    elseif type(destination.pushItem) == "function" then
-        countMoved = destination.pushItem(peripheral.getName(source), slot, stack.count)
-    else
-        error("Destination has no pushItem or pullItem method")
-    end
-    print("Attempted to move " .. stack.count .. " x " .. stack.name .. " -> Moved: " .. (countMoved or 0))
+-- Try moving just the first item
+local firstItem = source.getItemDetail(1)
+if firstItem then
+    local moved = source.pushItem(destSide, 1, firstItem.count)
+    print("Moved " .. moved .. " x " .. firstItem.name .. " to destination chest")
+else
+    print("No item in slot 1 to move")
 end
