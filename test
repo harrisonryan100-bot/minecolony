@@ -1,10 +1,9 @@
 ------------------------------------------------------------
--- AE2ColonyWarehouse (Tile-Based, Updated)
--- by ChatGPT (CC:Tweaked / Advanced Peripherals compliant)
+-- AE2ColonyWarehouse (Simplified, CC:Tweaked / Advanced Peripherals Compliant)
 ------------------------------------------------------------
 
-local SCAN_INTERVAL  = 10   -- seconds between scans
-local DEBUG          = true
+local SCAN_INTERVAL = 10  -- seconds between scans
+local DEBUG = true
 
 -- Wrap peripherals
 local monitor  = peripheral.find("monitor") or error("No monitor found")
@@ -24,15 +23,6 @@ end
 ------------------------------------------------------------
 -- AE2 Helpers
 ------------------------------------------------------------
-local function getAEItems()
-    local items = meBridge.listItems() or {}
-    local counts = {}
-    for _, i in ipairs(items) do
-        counts[i.name] = (counts[i.name] or 0) + (i.count or 0)
-    end
-    return counts
-end
-
 local function exportToChest(itemName, count)
     local stack = { name = itemName, count = count }
     local ok, exported = pcall(function() return meBridge.exportItem(stack, chestSide) end)
@@ -44,19 +34,7 @@ local function exportToChest(itemName, count)
     return exported
 end
 
-local function isCraftable(itemName)
-    local craftable = meBridge.listCraftableItems() or {}
-    for _, i in ipairs(craftable) do
-        if i.name == itemName then return true end
-    end
-    return false
-end
-
 local function craftItem(itemName, count)
-    if not isCraftable(itemName) then
-        dprint("Item not craftable: " .. itemName)
-        return false
-    end
     local ok, result = pcall(function() return meBridge.craftItem({ name = itemName, count = count }) end)
     if ok then
         dprint("Scheduled craft of " .. count .. "x " .. itemName)
@@ -74,57 +52,28 @@ local function getRequests()
     return colony.getRequests() or {}
 end
 
-local function getBuilderRequests(builderName)
-    local all = getRequests()
-    local builderReqs = {}
-    for _, r in ipairs(all) do
-        if r.target == builderName then
-            table.insert(builderReqs, r)
-        end
-    end
-    return builderReqs
-end
-
 ------------------------------------------------------------
--- Fulfill Requests
+-- Fulfill All Requests
 ------------------------------------------------------------
 local function fulfillAllRequests()
     local allRequests = getRequests()
-    local aeItems = getAEItems()
-
-    -- Aggregate needed totals for all requests
-    local neededTotals = {}
-    for _, req in ipairs(allRequests) do
-        local item = req.items[1].name
-        neededTotals[item] = (neededTotals[item] or 0) + req.count
+    if #allRequests == 0 then
+        dprint("No requests to fulfill")
+        return
     end
 
-    -- Craft missing items
-    for item, totalNeeded in pairs(neededTotals) do
-        local available = aeItems[item] or 0
-        if available < totalNeeded then
-            local missing = totalNeeded - available
-            craftItem(item, missing)
-        end
-    end
-
-    -- Export items to fulfill requests
+    -- Fulfill each request individually
     for _, req in ipairs(allRequests) do
         local itemName = req.items[1].name
         local needed = req.count
-        local available = aeItems[itemName] or 0
-        local toExport = math.min(available, needed)
-        if toExport > 0 then
-            local exported = exportToChest(itemName, toExport)
-            aeItems[itemName] = (aeItems[itemName] or 0) - exported
-        end
-    end
 
-    -- Return unrequested items to AE2
-    for itemName, count in pairs(aeItems) do
-        if count > 0 then
-            dprint("Returning " .. count .. "x " .. itemName .. " to AE2 storage")
-            -- AE2 automatically keeps items in storage; no action needed unless physically in chest
+        -- Attempt to export requested quantity
+        local exported = exportToChest(itemName, needed)
+
+        -- If not fully exported, schedule craft for missing amount
+        if exported < needed then
+            local missing = needed - exported
+            craftItem(itemName, missing)
         end
     end
 end
