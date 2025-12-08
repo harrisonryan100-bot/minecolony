@@ -9,7 +9,7 @@ if not chest then error("No chest found on back!") end
 
 -- Helper: Export items from ME Bridge to chest
 local function exportItem(itemName, count)
-    local exported = me_bridge.exportItem({name=itemName, count=count}, "back")
+    local exported = me_bridge.exportItem({name=itemName, count=count}, chest) -- pass peripheral
     if exported > 0 then
         print("Exported " .. exported .. "x " .. itemName .. " to chest.")
     else
@@ -24,7 +24,7 @@ local function returnUnrequested(requestedItems)
     for slot, item in pairs(stored) do
         local name = item.name
         if not requestedItems[name] then
-            local returned = me_bridge.exportItem({name=name, count=item.count}, "bottom")
+            local returned = me_bridge.exportItem({name=name, count=item.count}, me_bridge) -- return to AE2
             if returned > 0 then
                 print("Returned " .. returned .. "x " .. name .. " to AE2 storage.")
             end
@@ -34,7 +34,6 @@ end
 
 -- Main loop
 while true do
-    -- Get all requests
     local requests = colony_integrator.getRequests() or {}
 
     -- Build a table of requested items (exact counts)
@@ -48,12 +47,10 @@ while true do
     -- Fulfill requested items
     for itemName, count in pairs(requestedItems) do
         exportItem(itemName, count)
-        -- AE2 will automatically craft items if they are missing
     end
 
     -- Return unrequested items
     returnUnrequested(requestedItems)
 
-    -- Wait 10 seconds before next cycle
     sleep(10)
 end
