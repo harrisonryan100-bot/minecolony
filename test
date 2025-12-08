@@ -39,25 +39,10 @@ while true do
             local reqName = req.name
             local reqItem = req.items[1].name
             local reqCount = req.count
-            local provided = 0
 
-            -- Check available in AE2
-            local aeItems = me_bridge.listItems() or {}
-            local available = 0
-            for _, data in ipairs(aeItems) do
-                if data.name == reqItem then
-                    available = data.count or 0
-                    break
-                end
-            end
-
-            if available > 0 then
-                local toExport = math.min(reqCount, available)
-                local actuallyExported = exportItem(reqItem, toExport)
-                provided = provided + actuallyExported
-            end
-
-            dprint(string.format("Request: %d/%d %s provided", provided, reqCount, reqItem))
+            -- Try exporting the requested amount directly
+            local exported = exportItem(reqItem, reqCount)
+            dprint(string.format("Request: %d/%d %s provided", exported, reqCount, reqItem))
         end
     else
         dprint("No requests found from Colony Integrator.")
