@@ -1,95 +1,68 @@
 ------------------------------------------------------------
--- AE2 → Colony → Chest Exporter
--- Simplified working version
+-- Simple AE2 to Chest Export Script
+-- Only handles Builder's Hut requests
 ------------------------------------------------------------
 
--- CONFIG
-local colonySide = "top"     -- side where Colony Integrator is
-local chestSide  = "front"   -- side where a regular chest is placed
-local meBridgeSide = "bottom" -- side where ME Bridge is attached
-local SCAN_INTERVAL = 10
-local DEBUG = true
+local colonySide = "top"    -- Colony Integrator side
+local meBridgeSide = "bottom"  -- ME Bridge side
+local chestSide = "back"    -- Chest to push items into
 
--- WRAPPERS
+-- Wrap peripherals
 local colony = peripheral.wrap(colonySide)
-if not colony then error("No Colony Integrator found on side " .. colonySide) end
-
-local chest = peripheral.wrap(chestSide)
-if not chest then error("No chest found on side " .. chestSide) end
+if not colony then error("Colony Integrator not detected on " .. colonySide) end
 
 local meBridge = peripheral.wrap(meBridgeSide)
-if not meBridge then error("No ME Bridge found on side " .. meBridgeSide) end
+if not meBridge then error("ME Bridge not detected on " .. meBridgeSide) end
 
--- Logging helper
-local function dprint(...)
-    if DEBUG then print("[DEBUG]", ...) end
-end
+local chest = peripheral.wrap(chestSide)
+if not chest then error("No chest detected on " .. chestSide) end
 
--- Get AE2 item count
-local function getItemCount(itemName)
-    local total = 0
-    local ok, storage = pcall(function() return meBridge.listItems() end)
-    if ok and storage then
-        for _, item in ipairs(storage) do
-            if item.name == itemName then
-                total = total + (item.count or 0)
-            end
-        end
-    else
-        dprint("Failed to list items on ME Bridge")
-    end
-    return total
-end
+print("Colony Integrator detected on " .. colonySide)
+print("ME Bridge detected on " .. meBridgeSide)
+print("Chest detected on " .. chestSide)
 
--- Export items to chest
+-- Simple export function
 local function exportToChest(itemName, count)
-    local ok, result = pcall(function()
-        return meBridge.exportItem({name=itemName, count=count}, chestSide)
-    end)
-    if ok then
-        dprint(string.format("Attempted to export %d x %s: success=%s", count, itemName, tostring(result)))
-        return result
+    -- Attempt to pull from ME Bridge (simulate with exportItem if available)
+    if type(meBridge.pullItem) == "function" then
+        local pulled = meBridge.pullItem({name = itemName, count = count})
+        if pulled > 0 then
+            local transferred = chest.pullItem(meBridgeSide, pulled) -- fallback
+            print("Pulled " .. pulled .. " of " .. itemName .. " to chest")
+            return pulled
+        else
+            print("Item " .. itemName .. " not available in AE2")
+            return 0
+        end
+    elseif type(meBridge.exportItem) == "function" then
+        local exported = meBridge.exportItem({name = itemName, count = count}, chestSide)
+        print("Exported " .. exported .. " of " .. itemName .. " to chest")
+        return exported
     else
-        dprint(string.format("Failed to export %s: %s", itemName, result))
+        print("ME Bridge cannot export items")
         return 0
     end
 end
 
--- Process builder requests
-local function processRequests()
-    local requests = colony.getRequests()
-    if not requests or #requests == 0 then
-        dprint("No requests found")
-        return
-    end
-
+-- Main loop
+while true do
+    local requests = colony.getRequests() or {}
     for _, req in ipairs(requests) do
-        local target = req.target or ""
-        if string.find(target, "Builder") then
+        if req.target:match("Builder") then
             local itemName = req.items[1] and req.items[1].name
-            local reqCount = req.count or 1
-            if not itemName then
-                dprint("Cannot determine item for request: " .. req.name)
-            else
-                local available = getItemCount(itemName)
-                if available <= 0 then
-                    dprint("Not enough " .. itemName .. " in AE2")
+            local itemCount = req.count or 1
+            if itemName then
+                local success = exportToChest(itemName, itemCount)
+                if success >= itemCount then
+                    print("Request fulfilled: " .. itemName .. " x" .. itemCount)
                 else
-                    local toExport = math.min(reqCount, available)
-                    local success = exportToChest(itemName, toExport)
-                    if success > 0 then
-                        dprint(string.format("Exported %d x %s to chest for %s", success, itemName, target))
-                    else
-                        dprint(string.format("Failed to export %s for %s", itemName, target))
-                    end
+                    print("Could not fully fulfill: " .. itemName .. " x" .. itemCount)
                 end
+            else
+                print("Could not determine item for request: " .. req.name)
             end
         end
     end
+    sleep(5)  -- wait 5 seconds before scanning again
 end
-
--- MAIN LOOP
-while true do
-    processRequests()
-    sleep(SCAN_INTERVAL)
-end
+------------------------------------------------------------
