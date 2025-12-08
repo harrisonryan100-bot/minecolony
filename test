@@ -1,4 +1,4 @@
 local methods = peripheral.getMethods("bottom")
-for i = 1, math.min(15, #methods) do
+for i = 16, math.min(30, #methods) do
   print("Method:", methods[i])
 end
