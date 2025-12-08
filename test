@@ -1,66 +1,56 @@
--- Wrap peripherals
-local integrator = peripheral.wrap("top")      -- colony integrator
-local me        = peripheral.wrap("bottom")    -- me bridge
-local chest     = peripheral.wrap("back")      -- output chest
+local colony = peripheral.wrap("top")
+local me = peripheral.wrap("bottom")
 
-if not integrator then error("No Colony Integrator on top") end
-if not me then error("No ME Bridge on bottom") end
-if not chest then error("No chest on back") end
+-- Computer position
+local compX, compY, compZ = 31, 62, -45
 
--- Export item from AE2 into chest
-local function exportFromAE2(item, amount)
-    local exported = me.exportItem({name=item, count=amount}, "back")
-    print("Exported", exported, "/", amount, item)
-    return exported
+-- Logging helper
+local function log(msg)
+    local timestamp = os.date("%H:%M:%S")
+    print(timestamp .. " | " .. msg)
+    local file = fs.open("automation_log.txt", "a")
+    file.writeLine(timestamp .. " | " .. msg)
+    file.close()
 end
 
--- Return all chest items to AE2
-local function returnChestItems()
-    for slot, item in pairs(chest.list()) do
-        if item and item.name then
-            local returned = me.importItem({name=item.name, count=item.count}, "back")
-            print("Returned", returned, "of", item.name, "to AE2")
+-- Find nearest builder hut
+local function getNearestBuilder()
+    local nearest = nil
+    local nearestDist = math.huge
+    local buildings = colony.getBuildings() or {}
+    for _, b in ipairs(buildings) do
+        if b.type == "builder" then
+            local x, y, z = b.location.x, b.location.y, b.location.z
+            local dist = math.sqrt((x - compX)^2 + (y - compY)^2 + (z - compZ)^2)
+            if dist < nearestDist then
+                nearestDist = dist
+                nearest = b
+            end
         end
     end
+    return nearest
 end
 
--- Autocraft missing items
-local function autocraft(item, amountMissing)
-    print("Requesting craft:", item, "x", amountMissing)
-    local ok, err = pcall(function()
-        me.craftItem({ name = item, count = amountMissing })
-    end)
-    if not ok then
-        print("Craft failed:", err)
+-- Fulfill requests for nearest builder hut
+local function fulfillNearestBuilderRequests()
+    local nearest = getNearestBuilder()
+    if not nearest then
+        log("No builder huts found")
+        return
     end
-end
 
-while true do
-    local requests = integrator.getRequests() or {}
-    local totals = {}
-
-    -- Tally how many of each item are needed total
+    log("Targeting nearest builder hut: " .. nearest.name)
+    local requests = colony.getRequests() or {}
     for _, req in ipairs(requests) do
-        local item = req.items[1].name
-        totals[item] = (totals[item] or 0) + req.count
-    end
-
-    -- Fulfill all requests
-    for item, needed in pairs(totals) do
-        local ae = me.getItem({name=item})
-        local have = ae and ae.count or 0
-
-        print("Need:", needed, "Have:", have, item)
-
-        if have < needed then
-            autocraft(item, needed - have)
+        if req.target == nearest.name then
+            -- Here you’d call your fulfillRequest(req) function
+            log("Processing request for " .. req.target)
         end
-
-        exportFromAE2(item, needed)
     end
+end
 
-    -- Return unused items after fulfilling
-    returnChestItems()
-
-    sleep(10)
+-- Main loop
+while true do
+    fulfillNearestBuilderRequests()
+    sleep(1)
 end
