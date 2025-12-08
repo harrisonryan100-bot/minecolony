@@ -41,11 +41,12 @@ local function pushItem(name, quota)
   end
 end
 
--- Pull back non-requested items
+-- Pull back non-requested items (safe version)
 local function pullExtras(requestNames)
-  local inv = warehouse.list() or {}
-  for slot, stack in pairs(inv) do
-    if not requestNames[stack.name] then
+  local invSize = warehouse.size()
+  for slot = 1, invSize do
+    local stack = warehouse.getItemDetail(slot)
+    if stack and not requestNames[stack.name] then
       me.importItem({name=stack.name, count=stack.count}, "left")
       log("↩ Pulled back " .. stack.count .. "x " .. stack.name)
     end
