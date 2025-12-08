@@ -1,30 +1,47 @@
-while true do
-    local requests = colony_integrator.getRequests() or {}
+-- Peripheral setup
+local colony_integrator = peripheral.wrap("top")
+local me_bridge = peripheral.wrap("bottom")
 
+if not colony_integrator then error("No colony integrator found on top") end
+if not me_bridge then error("No ME bridge found on bottom") end
+
+-- Delay between scans
+local SCAN_INTERVAL = 10
+
+-- Helper: export items from ME to adjacent inventory
+local function safeExport(itemName, count)
+    local stack = {name = itemName, count = count or 1}
+    local sides = {"top", "bottom", "left", "right", "front", "back"}
+    for _, side in ipairs(sides) do
+        local ok, exported = pcall(me_bridge.exportItem, me_bridge, stack, side)
+        if ok and exported and exported > 0 then
+            print("Exported " .. exported .. " x " .. itemName .. " to side " .. side)
+            return exported
+        end
+    end
+    print("Failed to export " .. itemName)
+    return 0
+end
+
+-- Main loop
+while true do
+    print("Scanning Ezra's Builder Hut requests...")
+    local requests = colony_integrator.getRequests() or {}
+    
     for _, req in ipairs(requests) do
-        if req.target == "Builder Ezra P. Barrett" and req.items then
-            for _, item in ipairs(req.items) do
-                local itemName = item.name
-                local needed = item.count or 0
-                local aeItems = me_bridge.listItems() or {}
-                local available = 0
-                for _, data in ipairs(aeItems) do
-                    if data.name == itemName then
-                        available = data.count or 0
-                        break
-                    end
-                end
-                local toExport = math.min(available, needed)
-                if toExport > 0 then
-                    local exported = me_bridge.exportItem({name=itemName, count=toExport}, "left")
-                    print("Exported", exported, itemName)
-                else
-                    print("Not enough", itemName, "in storage")
-                end
-                sleep(0.5)  -- short pause between items
+        if req.target == "Builder Ezra P. Barrett" then
+            local item = req.items[1].name
+            local needed = req.count
+            print("Request found: " .. needed .. " x " .. item)
+            
+            -- Attempt to export from ME bridge
+            local exported = safeExport(item, needed)
+            if exported < needed then
+                print("Could not fully fulfill " .. item .. " (" .. exported .. "/" .. needed .. ")")
             end
         end
     end
 
-    sleep(10)  -- pause before next cycle
+    print("Scan complete. Waiting " .. SCAN_INTERVAL .. "s before next scan...")
+    sleep(SCAN_INTERVAL)
 end
