@@ -1,101 +1,12 @@
-------------------------------------------------------------
--- AE2ColonyWarehouse with Export Logging
-------------------------------------------------------------
+local me = peripheral.find("meBridge") or error("No ME bridge found!")
 
-local SCAN_INTERVAL = 10  -- seconds between scans
-local DEBUG = true
+print("Does listItems work?")
+local items = me.listItems()
+print(items)
 
--- Wrap peripherals
-local monitor  = peripheral.find("monitor") or error("No monitor found")
-local meBridge = peripheral.find("meBridge") or peripheral.wrap("bottom") or error("No ME Bridge found")
-local colony   = peripheral.find("colonyIntegrator") or peripheral.wrap("top") or error("No Colony Integrator found")
-local chestSide = "back" -- inventory connected to ME Bridge
+print("Craftable list:")
+print(me.isItemCraftable({name="minecraft:stone_bricks"}))
 
-if not colony.isInColony then
-    error("Colony Integrator is not inside a colony")
-end
-
--- Debug print
-local function dprint(...)
-    if DEBUG then print("[DEBUG]", ...) end
-end
-
-------------------------------------------------------------
--- AE2 Helpers
-------------------------------------------------------------
-local function exportToChest(itemName, count)
-    local stack = { name = itemName, count = count }
-    dprint("Attempting to export " .. count .. "x " .. itemName .. " to side: " .. chestSide)
-    local ok, exported = pcall(function() return meBridge.exportItem(stack, chestSide) end)
-    if not ok then
-        dprint("ERROR exporting " .. itemName .. ": " .. tostring(exported))
-        return 0
-    end
-    if exported == 0 then
-        dprint("Nothing exported for " .. itemName .. ". Check if AE2 has stock or chest is accessible.")
-    else
-        dprint("Successfully exported " .. exported .. "x " .. itemName)
-    end
-    return exported
-end
-
-local function craftItem(itemName, count)
-    dprint("Attempting to craft " .. count .. "x " .. itemName)
-    local ok, result = pcall(function() return meBridge.craftItem({ name = itemName, count = count }) end)
-    if not ok then
-        dprint("ERROR crafting " .. itemName .. ": " .. tostring(result))
-        return false
-    end
-    dprint("Scheduled craft of " .. count .. "x " .. itemName)
-    return true
-end
-
-------------------------------------------------------------
--- Colony Integrator Helpers
-------------------------------------------------------------
-local function getRequests()
-    local ok, requests = pcall(function() return colony.getRequests() end)
-    if not ok then
-        dprint("ERROR fetching requests: " .. tostring(requests))
-        return {}
-    end
-    return requests or {}
-end
-
-------------------------------------------------------------
--- Fulfill All Requests with Logging
-------------------------------------------------------------
-local function fulfillAllRequests()
-    local allRequests = getRequests()
-    if #allRequests == 0 then
-        dprint("No requests to fulfill")
-        return
-    end
-
-    for _, req in ipairs(allRequests) do
-        local itemName = req.items[1].name
-        local needed = req.count
-
-        dprint(string.format("Processing request for %d x %s (Target: %s)", needed, itemName, req.target))
-
-        -- Attempt to export requested quantity
-        local exported = exportToChest(itemName, needed)
-
-        -- If not fully exported, schedule craft for missing amount
-        if exported < needed then
-            local missing = needed - exported
-            dprint(string.format("%d x %s missing from AE2, scheduling craft", missing, itemName))
-            craftItem(itemName, missing)
-        end
-    end
-end
-
-------------------------------------------------------------
--- Main Loop
-------------------------------------------------------------
-while true do
-    dprint("Starting request scan...")
-    fulfillAllRequests()
-    dprint("Scan complete. Sleeping for " .. SCAN_INTERVAL .. " seconds.\n")
-    sleep(SCAN_INTERVAL)
-end
+print("Export test:")
+local r = me.exportItem({name="minecraft:stone_bricks", count=1}, "back")
+print("Export returned:", r)
