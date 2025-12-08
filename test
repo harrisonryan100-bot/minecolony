@@ -1,4 +1,3 @@
--- Wrap peripherals
 local colony_integrator = peripheral.wrap("top")  -- Integrator
 local me_bridge = peripheral.wrap("bottom")       -- AE2 Bridge
 local chest = peripheral.wrap("left")             -- Output chest
@@ -7,20 +6,36 @@ if not colony_integrator or not me_bridge or not chest then
     error("Missing required peripherals")
 end
 
--- Helper: get AE2 current stock
-local function getAE2Count(itemName)
-    local count = 0
-    local items = me_bridge.list()  -- returns table with keys as item names
-    if items[itemName] then
-        count = items[itemName].size or 0
+local function exportItemToChest(itemName, count)
+    local exported = 0
+    local ok, result = pcall(function()
+        exported = me_bridge.exportItem({name=itemName, count=count}, "left")
+    end)
+    if not ok then
+        print("Error exporting", itemName, "-", result)
+        exported = 0
     end
-    return count
+    return exported
+end
+
+local function craftItem(itemName, count)
+    local ok, result = pcall(function()
+        return me_bridge.craftItem({name=itemName, count=count})
+    end)
+    if not ok then
+        print("Error crafting", itemName, "-", result)
+        return false
+    end
+    if result then
+        print("Requested craft:", count, "x", itemName)
+        return true
+    end
+    return false
 end
 
 while true do
     local allRequests = colony_integrator.getRequests() or {}
 
-    -- Collect Builder's Hut requests
     local builderRequests = {}
     for _, req in ipairs(allRequests) do
         if req.target == "Builder's Hut" then
@@ -29,32 +44,24 @@ while true do
         end
     end
 
-    -- Process each requested item
-    for itemName, totalNeeded in pairs(builderRequests) do
-        local haveCount = 0
-        -- get current AE2 count
-        local aeItems = me_bridge.list() or {}
-        for _, item in ipairs(aeItems) do
-            if item.name == itemName then
-                haveCount = item.count or 0
-                break
-            end
-        end
+    for itemName, totalCount in pairs(builderRequests) do
+        local remaining = totalCount
 
-        local missing = totalNeeded - haveCount
-        if missing > 0 then
-            -- Try to export missing amount to chest
-            local exported = me_bridge.exportItem({name=itemName, count=missing}, "left")
-            print("Exported", exported or 0, "of", itemName, "to chest")
+        while remaining > 0 do
+            local exported = exportItemToChest(itemName, remaining)
+            remaining = remaining - exported
+            print("Exported", exported, "of", itemName, "remaining", remaining)
 
-            -- If AE2 didn't have enough, craft the remainder
-            if exported < missing then
-                local toCraft = missing - (exported or 0)
-                local crafted = me_bridge.craftItem({name=itemName, count=toCraft})
-                print("Craft requested for", toCraft, "of", itemName)
+            if remaining > 0 then
+                local success = craftItem(itemName, remaining)
+                if not success then
+                    print("Cannot craft more of", itemName, "waiting for resources...")
+                    break
+                else
+                    -- Wait a bit to let AE2 process the craft before trying again
+                    sleep(2)
+                end
             end
-        else
-            print("AE2 has enough of", itemName, "(", haveCount, "available)")
         end
     end
 
