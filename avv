@@ -1,0 +1,82 @@
+local colony = peripheral.wrap("top")
+local me = peripheral.wrap("bottom")
+local TARGET_SIDE = "right"
+
+-- Netherite tool whitelist
+local netheriteTools = {
+  ["minecraft:netherite_pickaxe"]=true, ["minecraft:netherite_axe"]=true,
+  ["minecraft:netherite_shovel"]=true, ["minecraft:netherite_hoe"]=true,
+  ["minecraft:netherite_sword"]=true
+}
+local function isNetheriteTool(id) return netheriteTools[id] end
+
+-- Flexible builder filter
+local function isBuilderTarget(t)
+  if type(t) == "string" then
+    return t:lower():find("builder") ~= nil
+  elseif type(t) == "table" then
+    for k,v in pairs(t) do
+      if type(v) == "string" and v:lower():find("builder") then return true end
+    end
+  end
+  return false
+end
+
+-- Normalize item fields
+local function normItem(it)
+  local id = it.name or it.id or (it.item and it.item.name)
+  local cnt = it.count or it.needed or 1
+  return id, cnt
+end
+
+-- AE2 helpers
+local function getItemCount(id)
+  local items = me.getItems() or {}
+  local total = 0
+  for _,it in ipairs(items) do
+    if it and it.name == id then total = total + (it.count or 0) end
+  end
+  return total
+end
+
+local function pushItem(id, quota)
+  local available = getItemCount(id)
+  if available >= quota then
+    local ok = me.exportItem({name=id, count=quota}, TARGET_SIDE)
+    print("✔ "..quota.."x "..id.." exported: "..tostring(ok))
+    return ok
+  else
+    print("⚠ "..id.." missing ("..available.."/"..quota..")")
+    return false
+  end
+end
+
+-- Main loop
+while true do
+  local ok, reqs = pcall(function() return colony.getRequests() end)
+  if not ok then print("getRequests() error") sleep(10) else
+    print("Total colony requests: "..#reqs)
+    local handled, removed = 0, 0
+    for _,r in ipairs(reqs) do
+      if isBuilderTarget(r.target) then
+        print("→ Builder request: "..(r.desc or "no description"))
+        for _,it in ipairs(r.items or {}) do
+          local id, cnt = normItem(it)
+          if id then
+            local isTool = id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword")
+            if isTool and not isNetheriteTool(id) then
+              print("  🗑 skipped non-Netherite: "..id)
+              removed = removed + 1
+            else
+              if pushItem(id, cnt) then handled = handled + 1 end
+            end
+          else
+            print("  ⚠ item missing ID")
+          end
+        end
+      end
+    end
+    print("Loop complete: handled "..handled.." items, removed "..removed.." non-Netherite")
+  end
+  sleep(10)
+end
