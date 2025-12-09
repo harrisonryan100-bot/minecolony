@@ -20,7 +20,7 @@ local function isNetheriteTool(id) return netheriteTools[id] end
 -- Normalize item fields
 local function normItem(it)
   local id = it.name or it.id or (it.item and it.item.name)
-  local cnt = it.count or it.needed or 1
+  local cnt = it.count or it.needed or it.quantity or 1
   return translateID(id), cnt
 end
 
@@ -37,8 +37,9 @@ end
 local function ensureItem(id, quota)
   local available = getItemCount(id)
   if available < quota then
-    print("⚠ Need to craft "..(quota-available).."x "..id)
-    local ok = me.craftItem({name=id, count=quota-available})
+    local craftCount = quota - available
+    print("⚠ Need to craft "..craftCount.."x "..id)
+    local ok = me.craftItem({name=id, count=craftCount})
     print("   Craft result="..tostring(ok))
     return false
   else
@@ -47,10 +48,16 @@ local function ensureItem(id, quota)
 end
 
 local function pushItem(id, quota)
-  if ensureItem(id, quota) then
+  print("→ "..quota.."x "..id.." requested")
+  local available = getItemCount(id)
+  print("   AE2 reports "..available.." available")
+  if available >= quota then
     local ok = me.exportItem({name=id, count=quota}, TARGET_SIDE)
-    print("✔ "..quota.."x "..id.." exported: "..tostring(ok))
+    print("✔ Exported "..quota.."x "..id.." result="..tostring(ok))
     return ok
+  else
+    ensureItem(id, quota)
+    return false
   end
 end
 
