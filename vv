@@ -1,0 +1,115 @@
+local colony = peripheral.wrap("top")
+local me = peripheral.wrap("bottom")
+local TARGET_SIDE = "right"
+
+-- ID translation map (expand as you discover mismatches)
+local idMap = {
+  ["minecraft:oak_planks"] = "minecraft:oak_wood_planks",
+  ["minecraft:stone_bricks"] = "minecraft:stonebrick"
+}
+local function translateID(id) return idMap[id] or id end
+
+-- Netherite tool whitelist
+local netheriteTools = {
+  ["minecraft:netherite_pickaxe"]=true, ["minecraft:netherite_axe"]=true,
+  ["minecraft:netherite_shovel"]=true, ["minecraft:netherite_hoe"]=true,
+  ["minecraft:netherite_sword"]=true
+}
+local function isNetheriteTool(id) return netheriteTools[id] end
+
+-- Normalize item fields
+local function normItem(it)
+  local id = it.name or it.id or (it.item and it.item.name)
+  local cnt = it.count or it.needed or it.quantity or 1
+  return translateID(id), cnt
+end
+
+-- AE2 helpers
+local function getItemCount(id)
+  local items = me.getItems() or {}
+  local total = 0
+  for _,it in ipairs(items) do
+    if it and it.name == id then total = total + (it.count or 0) end
+  end
+  return total
+end
+
+local function ensureItem(id, quota)
+  local available = getItemCount(id)
+  if available < quota then
+    local craftCount = quota - available
+    print("⚠ Need to craft "..craftCount.."x "..id)
+    local ok = me.craftItem({name=id, count=craftCount})
+    print("   Craft result="..tostring(ok))
+    return false
+  else
+    return true
+  end
+end
+
+local function pushItem(id, quota)
+  print("→ "..quota.."x "..id.." requested")
+  local available = getItemCount(id)
+  print("   AE2 reports "..available.." available")
+  if available >= quota then
+    local ok = me.exportItem({name=id, count=quota}, TARGET_SIDE)
+    print("✔ Exported "..quota.."x "..id.." result="..tostring(ok))
+    return ok
+  else
+    ensureItem(id, quota)
+    return false
+  end
+end
+
+-- Builder target check
+local function isBuilderTarget(t)
+  if type(t) == "string" then
+    return t:lower():find("builder") ~= nil
+  elseif type(t) == "table" then
+    for _,v in pairs(t) do
+      if type(v)=="string" and v:lower():find("builder") then return true end
+    end
+  end
+  return false
+end
+
+-- Main loop
+while true do
+  -- Colony-wide requests
+  local ok, reqs = pcall(function() return colony.getRequests() end)
+  if ok then
+    print("Colony requests: "..#reqs)
+    for _,r in ipairs(reqs) do
+      if isBuilderTarget(r.target) then
+        print("→ Builder request: "..(r.desc or "no description"))
+        for _,it in ipairs(r.items or {}) do
+          local id, cnt = normItem(it)
+          if id then
+            local isTool = id:find("pickaxe") or id:find("axe") or id:find("shovel") or id:find("hoe") or id:find("sword")
+            if isTool and not isNetheriteTool(id) then
+              print("  🗑 skipped non-Netherite: "..id)
+            else
+              pushItem(id, cnt)
+            end
+          end
+        end
+      end
+    end
+  end
+
+  -- Work orders
+  local orders = colony.getWorkOrders()
+  print("WorkOrders: "..#orders)
+  for _,wo in ipairs(orders) do
+    if wo.buildingName and wo.buildingName:lower():find("builder") then
+      print("→ WorkOrder for "..wo.buildingName.." targetLevel="..tostring(wo.targetLevel))
+      local res = colony.getWorkOrderResources(wo.id)
+      for _,r in ipairs(res) do
+        local id, cnt = normItem(r)
+        if id then pushItem(id, cnt) end
+      end
+    end
+  end
+
+  sleep(10)
+end
